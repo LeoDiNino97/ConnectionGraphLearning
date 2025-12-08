@@ -27,4 +27,4 @@ If you find this code useful for your research, please consider citing the follo
 
 ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
 ![NumPy](https://img.shields.io/badge/numpy-%23013243.svg?style=for-the-badge&logo=numpy&logoColor=white)
-![PyManOpt](https://img.shields.io/badge/pymanopt-yellow?style=for-the-badge&logo=python&logoColor=white&link=https://github.com/pymanopt/pymanopt)
+![PyManOpt](https://img.shields.io/badge/pymanopt-yellow?style=for-the-badge&logo=python&logoColor=white&link=[https://github.com/pymanopt/pymanopt])
