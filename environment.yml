@@ -1,0 +1,30 @@
+name: cs
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python
+  - pip
+  - numpy
+  - scipy
+  - matplotlib
+  - seaborn
+  - pandas
+  - numba
+  - networkx
+  - jupyter
+  - autograd
+  - pylops
+  - pyproximal
+  - scikit-learn
+  - pyarrow
+  - scip
+  - cvxpy
+  - cvxopt
+  - tqdm
+  - wandb
+  - pip:
+    - picos
+    - pymanopt
+    - gstools
+    - PyWavelets
