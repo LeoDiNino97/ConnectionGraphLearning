@@ -25,9 +25,9 @@ If you find this code useful for your research, please consider citing the follo
 
 ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
 ![NumPy](https://img.shields.io/badge/numpy-%23013243.svg?style=for-the-badge&logo=numpy&logoColor=white)
-<a href="https://github.com/pymanopt/pymanopt">
-  <img src="https://pymanopt.org/docs/latest/_static/logo.png" height="28" />
-  <img src="https://img.shields.io/badge/PyManOpt-Used%20Here-blue?style=flat" />
-</a>
+![PyManOpt](https://img.shields.io/badge/PYMANOPT-purple?logo=https%3A%2F%2Fpymanopt.org%2Fdocs%2Flatest%2F_static%2Flogo.png)
+
+
+
 
 
