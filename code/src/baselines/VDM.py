@@ -1,4 +1,5 @@
 """ VDM.py
+
 Module for "Structured Learning of Consistent Connection Laplacians with Spectral Constraints", Di Nino L., D'Acunto G., et al., 2025
 @Author: Leonardo Di Nino
 Date: 2025-04
@@ -6,11 +7,6 @@ Date: 2025-04
 
 import numpy as np 
 
-###################################################################################################
-# "Vector diffusion maps and the Connection Laplacian" (A.Singer,..., 2014)
-# The following is an implementation of the two-steps connection laplacian inference framework 
-# based on the approximation of the related continuous operator on Riemannian Manifolds
-###################################################################################################
 
 class VectorDiffusionMaps:
     """ This class implements the estimation of the connection laplacian via local PCA and vector diffusion maps allignment over a point cloud as 
@@ -18,7 +14,7 @@ class VectorDiffusionMaps:
     
     Parameters
     ----------
-    X : np.ndarray)
+    X : np.ndarray
         The point cloud dataset with dimension (manifold_dim, number_of_points)
     epsilon_geometric : float
         Hyperparameter controlling the underpinning geometric graph sparsity
