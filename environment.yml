@@ -23,6 +23,7 @@ dependencies:
   - cvxopt
   - tqdm
   - wandb
+  - hydra
   - pip:
     - picos
     - pymanopt

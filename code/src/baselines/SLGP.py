@@ -1,5 +1,4 @@
-"""
-baselines.py
+"""SLGP.py
 
 Module for "Structured Learning of Consistent Connection Laplacians with Spectral Constraints", Di Nino L., D'Acunto G., et al., 2025
 @Author: Leonardo Di Nino
@@ -7,36 +6,43 @@ Date: 2025-04
 """
 
 import numpy as np 
-import cvxpy as cp
-
-from tqdm import tqdm
-
-from itertools import product
 from sklearn.model_selection import KFold
 from scipy.fft import dct
 
 
-###################################################################################################
-# "Learning Sheaf Laplacian optimizing restriction maps" (L.Di Nino, et al.,  2024)
-# The following is an implementation of our previous work on smooth learning with a prior 
-# on the geometry of the restriction maps
-###################################################################################################
-
 class SmoothSheafDiffusion:
+    """Implementation of a sheaf learning algorithm from
+    'Learning Sheaf Laplacian optimizing restriction maps' (L.Di Nino, et al.,  2024)
+    based on local compression, Procrustes alignment and hierarchical edge sampling
+
+    Parameters
+    ----------
+    X : int
+        Observed 0-cochains in the shape (V * d, n_samples)
+    V : int
+        Number of nodes in the network
+    d : int
+        Stalk dimension
+    n_edges : int
+        Number of edges
+    k_folds : int
+        Number of folds for the validation procedure
+    """
     def __init__(
         self,
-        X,
-        V,
-        d,
-        n_edges
-    ):
+        X : np.ndarray,
+        V : int,
+        d : int,
+        n_edges : int,
+        k_folds : int = 5
+    ) -> None:
+
         # Dataset of 0-cochains (dV, n_samples)
         self.X = X
 
         # Problem dimensions
         self.V = V
         self.d = d
-
         self.n_samples = self.X.shape[1]
 
         # Number of edges is required as prior knowledge
@@ -46,12 +52,23 @@ class SmoothSheafDiffusion:
         self.basis = dct(np.eye(self.d), axis=0, norm='ortho').T
 
         # Two-steps inference
-        self.best_alpha = self.CrossValidation()
+        self.best_alpha = self.CrossValidation(k_folds)
         self.LocalSparsifying(self.best_alpha)
         self.Alignment()
     
     def CrossValidation(self, k_folds = 5):
+        """The method performs the cross validation for the hyperparameter regulating the local sparsification
+        
+        Parameters
+        ----------
+        k_folds : int
+            Number of folds for the validation procedure
 
+        Returns
+        -------
+        float
+            Best alpha parameter
+        """
         # Heuristics for the hyperparameters grid
         base_scale = (1 / self.X.shape[1]) * np.trace(self.X @ self.X.T)
 
@@ -102,6 +119,15 @@ class SmoothSheafDiffusion:
         return best_params['alpha']
 
     def LocalSparsifying(self, alpha, X = None):
+        """Performs local sparsification on the given basis (DCT)       
+
+        Parameters
+        ----------
+        alpha : float
+            Parameter regulating the sparsification
+        X : np.ndarray
+            Signals to be processed
+        """
         # Defining sub-routines for local sparsification
         def prox21_col(x, alpha):
             return ( 1 - alpha / (np.max([np.linalg.norm(x), alpha])) ) * x
@@ -142,6 +168,8 @@ class SmoothSheafDiffusion:
             self.local_bases[v] = self.basis[:, np.abs(self.local_codes[v][:,0]) > 1e-8]
 
     def Alignment(self):
+        """ Performs pairwise alignment based on Procrustes solution
+        """
         self.maps = {
             (i,j): {
                 i: None,
@@ -170,6 +198,13 @@ class SmoothSheafDiffusion:
                 self.dists[(i,j)] = np.linalg.norm(F_i @ self.basis @ S_i - self.basis @ S_j)
 
     def LaplacianBuilder(self):
+        """ Build a Sheaf Laplacian according to the prior on the number of edges and the post-alingment distances
+
+        Returns
+        -------
+        np.ndarray
+            The estimated sheaf Laplacian
+        """
 
         edges = list(sorted(self.dists.items(), key=lambda x:x[1]))[ : self.n_edges]
         L = np.zeros((self.d * self.V, self.d * self.V))

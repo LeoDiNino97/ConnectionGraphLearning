@@ -1,39 +1,51 @@
-"""
-baselines.py
+"""SDP.py
 
 Module for "Structured Learning of Consistent Connection Laplacians with Spectral Constraints", Di Nino L., D'Acunto G., et al., 2025
 @Author: Leonardo Di Nino
 Date: 2025-04
 """
 
+from itertools import product
+
 import numpy as np 
 import cvxpy as cp
-
-from tqdm import tqdm
-
-from itertools import product
 from sklearn.model_selection import KFold
-from scipy.fft import dct
-
-###################################################################################################
-# "Learning Sheaf Laplacian from Smooth Signals" (J.Hansen, R.Ghrist, 2019)
-# The following is an implementation of Jacob Hansen framework for the learning of sheaf laplacians
-# as minimum total variations problems over proper convex cones for specific sheaf-like structure
-###################################################################################################
 
 class SheafConnectionLaplacian:
+    """Implementation of a conic programming learning algorithm from
+    'Learning Sheaf Laplacian from Smooth Signals' (J.Hansen, R.Ghrist, 2019)
+    restricted to a cone containing as a submanifold the O(n) group
+
+    Parameters
+    ----------
+    V : int
+        Number of nodes in the network
+    d : int
+        Stalk dimension
+    alpha : float
+        Hyperparameter governing the log-barreer
+    beta : float 
+        Hyperparameter governing the Ridge term
+    gamma : float
+        Hyperparameter governing the volume preserving constraint
+    epsilon : float
+        Control term to avoid by-zero divisions
+    L0 : np.ndarray
+        Ground truth Sheaf Laplacian
+    """
 
     def __init__(
             self, 
-            V, 
-            d, 
-            alpha=1.0, 
-            beta=1.0, 
-            gamma = 1.0,
-            epsilon=1e-8, 
-            L0=None
-            ):
+            V : int, 
+            d : int, 
+            alpha : float = 1.0, 
+            beta : float = 1.0, 
+            gamma : float = 1.0,
+            epsilon : float = 1e-8, 
+            L0 : np.ndarray = None
+        ) -> None:
         
+        # Constructive parameter
         self.V = V
         self.d = d
         self.L0 = L0
@@ -42,7 +54,7 @@ class SheafConnectionLaplacian:
         # Parameter for covariance matrix
         self.C = cp.Parameter((self.d * self.V, self.d * self.V), PSD=True)
 
-        # Hyperparameters
+        # Hyperparameters of the problem
         self.alpha = cp.Parameter(nonneg=True, value=alpha)
         self.beta  = cp.Parameter(nonneg=True, value=beta)
         self.gamma = cp.Parameter(nonneg=True, value=gamma)
@@ -58,15 +70,18 @@ class SheafConnectionLaplacian:
             self.incidence[j,e] = 1
 
         # Build the problem
-        self._precompute_index_maps()
-        self._build_problem()
+        self.precompute_index_maps()
+        self.build_problem()
 
-    def _precompute_index_maps(self):
-
+    def precompute_index_maps(self):
+        """Precomputes index of entries of the sheaf laplacian to streamline computations
+        """
         self.C_diag_param = cp.Parameter(self.E)              
         self.C_off_param  = cp.Parameter((self.E, self.d * self.d))  
 
-    def _build_problem(self):
+    def build_problem(self):
+        """Istantiates the learning problem
+        """
         # Variables initalization
         self.rho = cp.Variable(self.E, nonneg=True, name="rho")
         self.F   = cp.Variable((self.E, self.d*self.d), name="F")  
@@ -91,13 +106,31 @@ class SheafConnectionLaplacian:
         objective = cp.Minimize(likelihood + R1 + R2)
         self.problem = cp.Problem(objective, constraints)
 
-    def Solve(
+    def solve(
             self, 
-            C, 
-            verbose=0, 
-            solver=cp.MOSEK, 
-            warm_start=False):
+            C : np.ndarray, 
+            verbose : int = 0, 
+            solver : str = "MOSEK", 
+            warm_start : bool = False
+        ):
+        """Method to solve the istantiated problem
+
+        Parameters
+        ----------
+        C : np.ndarray
+            Empirical covariance
+        verbose : int
+            Flag for the level of verbosity of the procedure
+        solver : str
+            Label for the solver in cvxpy
+        warm_start : bool
+            Flag for the warm start in solving the problem
         
+        Returns
+        -------
+        np.ndarray
+            The estimated sheaf Laplacian
+        """
         # Fill parameters (outside CVXPY graph)
         C_diag_vals = []
         C_off_vals  = []
@@ -133,32 +166,50 @@ class SheafConnectionLaplacian:
         if self.L0 is None:
             return L_hat
         else:
-            scale = (np.trace(L_hat.T @ self.L0) /
-                     (np.linalg.norm(L_hat,'fro')**2 + 1e-12))
+            # L0 is given to minimize the distance from it via a proper scaling
+            scale = (np.trace(L_hat.T @ self.L0) / (np.linalg.norm(L_hat,'fro')**2 + 1e-12))
             return scale * L_hat
     
-    def CrossValidation(
+    def cross_validation(
         self,
         X,
-        alpha_beta_ratio=1.0,
-        grid=None,
-        k_folds=5,
-        verbose=0,
-        solver=cp.MOSEK
+        alpha_beta_ratio : float = 1.0,
+        k_folds : int = 5,
+        verbose : int = 0,
+        solver : str = "MOSEK"
     ):
-        """
-        Cross-validation to tune beta, keeping alpha/beta constant.
+        """Cross-validation to tune beta and gamma, keeping alpha/beta constant.
+
+        Parameters
+        ----------
+        X : np.ndarray
+            Input data as (V * d, n_samples) to compute foldable covariances
+        alpha_beta_ratio : float
+            Ratio between alpha and beta (default is 1)
+        k_folds : int
+            Number of folds in the validation procedure
+        verbose : int
+            Flag for the level of verbosity of the procedure
+        solver : str
+            Label for the solver in cvxpy
+        
+        Returns
+        -------
+        dict
+            Table of the best alpha, beta, gamma parameters
         """
         # Scaling heuristic
         base_scale = (1 / X.shape[1]) * np.trace(X @ X.T)
         scale = base_scale / (self.V * self.d)
 
-        if grid is None:
-            beta_grid = [x * scale for x in [1e-3, 1e-2, 1e-1, 1.0, 1e1]]
-            gamma_grid = [x * scale for x in [1e-2, 1e-1, 1.0, 1e1, 1e2]]
+        beta_grid = [x * scale for x in [1e-3, 1e-2, 1e-1, 1.0, 1e1]]
+        gamma_grid = [x * scale for x in [1e-2, 1e-1, 1.0, 1e1, 1e2]]
 
         best_score = float("inf")
-        best_params = {"alpha": None, "beta": None}
+        best_params = {
+            "alpha": None, 
+            "beta": None, 
+            "gamma" : None}
 
         print("Validating best beta with fixed alpha/beta ratio...")
 
@@ -180,9 +231,8 @@ class SheafConnectionLaplacian:
                 C_val   = (1 / X_val.shape[1]) * (X_val @ X_val.T)
 
                 try:
-                    # fit on training covariance
+                    # Fit on training covariance
                     L_hat = self.Solve(C_train, verbose=verbose, solver=solver, warm_start=True)
-                    #L_hat = L_hat / np.linalg.norm(L_hat,)
 
                 except Exception as e:
                     if verbose:
@@ -201,21 +251,25 @@ class SheafConnectionLaplacian:
                     R2 = self.beta.value * np.sum(self.F.value ** 2)
                     score = likelihood + R1 + R2
                 else:
-                    # ground truth Laplacian available
+                    # Ground truth Laplacian available
                     score = np.linalg.norm(L_hat - self.L0, ord=1)
 
                 fold_scores.append(score)
 
             avg_score = np.mean(fold_scores)
-            print(f"[CV] beta = {beta_val}, alpha = {self.alpha.value}, avg_score = {avg_score:.4f}")
+            if verbose > 0:
+                print(f"[CV] beta = {beta_val}, alpha = {self.alpha.value}, gamma = {self.gamma.value}, avg_score = {avg_score:.4f}")
 
             if avg_score < best_score:
                 best_score = avg_score
-                best_params["beta"] = beta_val
+                best_params["beta"] = self.beta.value
                 best_params["alpha"] = self.alpha.value
+                best_params["gamma"] = self.gamma.value
 
         print("Best beta/alpha validated")
         self.beta.value = best_params["beta"]
         self.alpha.value = best_params["alpha"]
+        self.gamma.value = best_params["gamma"]
+
         return best_params
     

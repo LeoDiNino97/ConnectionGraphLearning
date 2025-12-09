@@ -1,19 +1,10 @@
-"""
-baselines.py
-
+""" VDM.py
 Module for "Structured Learning of Consistent Connection Laplacians with Spectral Constraints", Di Nino L., D'Acunto G., et al., 2025
 @Author: Leonardo Di Nino
 Date: 2025-04
 """
 
 import numpy as np 
-import cvxpy as cp
-
-from tqdm import tqdm
-
-from itertools import product
-from sklearn.model_selection import KFold
-from scipy.fft import dct
 
 ###################################################################################################
 # "Vector diffusion maps and the Connection Laplacian" (A.Singer,..., 2014)
@@ -22,21 +13,22 @@ from scipy.fft import dct
 ###################################################################################################
 
 class VectorDiffusionMaps:
-    '''
-    This class implements the estimation of the connection laplacian via local PCA and vector diffusion maps allignment over a point cloud.
-    Args:
-        X (np.ndarray): The point cloud dataset with dimension (manifold_dim, number_of_points)
-        epsilon_geometric (float): Hyperparameter controlling the underpinning geometric graph sparsity
-        epsilon_PCA (float): Hyperparameter controlloing the PCA approximation
-        gamma (float): Hyperparameter controlling the embedded dimension estimation
-        mode (str): Kernel function mode
-    Methods:
-        Kernel -> Kernel function applied to euclidean distances
-        PairwiseDistances -> Preocompute the matrix of distances with the Gram trick 
-        LocalPCA -> Compute the local frame for a node v as polar factors of the covariance matrix
-        LocalPCA_full -> Compute the local frame for all nodes
-        Alignment ->  Compute a geometric graph and a connection laplacian over it via Procrustes alignment
-    '''
+    """ This class implements the estimation of the connection laplacian via local PCA and vector diffusion maps allignment over a point cloud as 
+    described in "Vector diffusion maps and the Connection Laplacian" (A.Singer,..., 2014)
+    
+    Parameters
+    ----------
+    X : np.ndarray)
+        The point cloud dataset with dimension (manifold_dim, number_of_points)
+    epsilon_geometric : float
+        Hyperparameter controlling the underpinning geometric graph sparsity
+    epsilon_PCA : float
+        Hyperparameter controlloing the PCA approximation
+    gamma : float
+        Hyperparameter controlling the embedded dimension estimation
+    mode : str 
+        Kernel function mode
+    """
     def __init__ (
             self,
             X,
@@ -44,7 +36,7 @@ class VectorDiffusionMaps:
             epsilon_PCA,
             gamma = 0.9,
             mode = 'Gaussian'
-    ):
+    ) -> None:
         # The dataset of points from a Riemannian manifold and its dimensions
         self.X = X
         self.V = X.shape[1]
@@ -67,10 +59,19 @@ class VectorDiffusionMaps:
 
     def Kernel(
             self,
-            Z,
-    ):
-        '''
-        Kernel function applied to the euclidean distances
+            Z : np.ndarray,
+    ) -> np.ndarray:
+        '''Kernel function applied to the euclidean distances
+        
+        Parameters
+        ----------
+        Z : np.ndarray
+            Functions to be kernelezied
+        
+        Returns
+        -------
+        np.ndarray
+            Kernelized functions
         '''
         supp = np.array((Z <= 1) * (0 <= Z), dtype =float)
         if self.mode == 'Gaussian':
@@ -80,9 +81,13 @@ class VectorDiffusionMaps:
     
     def PairWiseDistances(
             self
-    ):
-        '''
-        Compute the matrix of pairwise distances between all points using the Gram trick
+    ) -> np.ndarray:
+        '''Compute the matrix of pairwise distances between all points using the Gram trick
+
+        Returns
+        -------
+        np.ndarray
+            Matrix of pairwise distances
         '''
         G = self.X.T @ self.X
         S = np.diag(G)
@@ -91,9 +96,20 @@ class VectorDiffusionMaps:
     def LocalPCA(
             self,
             v
-    ):
-        '''
-        Compute the local representation frame of each node as the polar factor of the covariance matrix
+    ) -> None:
+        '''Compute the local representation frame of each node as the polar factor of the covariance matrix
+
+        Parameters
+        ----------
+        v : int
+            Label of the point at which perform local PCA
+
+        Returns
+        -------
+        np.ndarray
+            Left singular vectors of the neighborhood PCA
+        int
+            Estimated tangent space dimension
         '''
 
         # Point coordinates at node v
@@ -124,10 +140,8 @@ class VectorDiffusionMaps:
     def LocalPCA_Full(
             self
     ):
+        '''Applying the LocalPCA routine to all the points in the dataset
         '''
-        Applying the LocalPCA routine to all the points in the dataset
-        '''
-        
         self.d_hats = np.zeros(self.V)      # Preallocating for estimation of the embedded dimension 
         self.local_basis = {}               # Preallocating to store local frames
 
@@ -143,8 +157,12 @@ class VectorDiffusionMaps:
     def Alignment(
             self
     ):
-        '''
-        Compute a geometric graph and a connection laplacian over it via Procrustes alignment
+        '''Compute a geometric graph and a connection laplacian over it via Procrustes alignment
+
+        Returns
+        -------
+        np.ndarray
+            Estimated connection Laplacian
         '''
         # Compute a geometric graph in terms of weights matrix with a gaussian Kernel
         self.W = self.Kernel(self.dist_matrix / np.sqrt(self.epsilon_geometric))
