@@ -11,11 +11,6 @@ import numpy as np
 import random
 import networkx as nx
 from matplotlib import pyplot as plt
-from scipy.spatial import cKDTree
-from scipy.sparse.linalg import eigsh
-from scipy.linalg import eigh
-from scipy.linalg import svd
-import scipy.sparse as sp
 
 @dataclass
 class CochainSample:
