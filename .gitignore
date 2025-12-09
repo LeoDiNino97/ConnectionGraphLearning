@@ -3,6 +3,7 @@ code/scripts
 code/notebook_experiments
 data
 figs
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
