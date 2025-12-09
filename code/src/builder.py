@@ -1,77 +1,66 @@
-"""
-builder.py
+""" builder.py
 
 Module for "Structured Learning of Consistent Connection Laplacians with Spectral Constraints", Di Nino L., D'Acunto G., et al., 2025
 @Author: Leonardo Di Nino
 Date: 2025-04
 """
 
+from dataclasses import dataclass
+
 import numpy as np
 import random
 import networkx as nx
-from dataclasses import dataclass
-
 from matplotlib import pyplot as plt
-
 from scipy.spatial import cKDTree
-
-import gstools as gs
-import pyvista as pv
-
 from scipy.sparse.linalg import eigsh
 from scipy.linalg import eigh
 from scipy.linalg import svd
-
 import scipy.sparse as sp
 
 @dataclass
 class CochainSample:
+    """ Wrapper for a cochain sample
+    """
     X: np.ndarray
     covariance: np.ndarray
     X_GT: np.ndarray
 
+class CG():
+    """ This is the super class for connection graphs
 
-class ERCG():
-    '''
-    This class implement a ER Graph with a consistent connection graph built on top of it
+    Parameters
+    ----------
 
-    INPUT:
-        V: int. The dimension of the network
-        d: int. The dimension of the stalks over the nodes
-        consistent: bool. A flag for the connection graph to be consistent
-        special: bool. A flag for the maps to be sampled from the SO(d) group
-
-    METHODS:
-        Weights: Sample weights for each edge from Unif(0.1,3)
-        Laplacian: Compute the weighted Laplacian given the weights
-        RandomConnectionGraph: Builds a connection graph on top of the grid graph and deriving the related algebraic operators
-        CochainsSampling: Samples from a PIAGMRF where the connection laplacian acts as the precision matrix a certain number N of samples
-        Visualize: Plots the underlying graph
-    '''
-    
+    V : int
+        Number of nodes in the network
+    d : int
+        Fiber (stalk) dimension
+    seed : int
+        Global seed
+    kron : bool
+        Flag for trivial bundle
+    consistent : bool
+        Flag for consistency
+    special : bool
+        Flag for special orthogonal group
+    """
     def __init__(
-            self, 
-            V,
-            d = 3, 
-            k = 1,
-            seed = 42,
-            p = None,
-            kron = False,
-            consistent = True, 
-            special = True):
+            self,
+            V : int,
+            d : int,
+            seed : int = 42,
+            kron : bool = False,
+            consistent : bool = True,
+            special : bool = True
+    ) -> None:
         
-        self.d = d
+        # System dimensions
         self.V = V
-        self.k = k  # Number of connected components
-        self.q = self.V - self.k
+        self.d = d
 
-        if p is None:
-            p = 1.1 * np.log(self.V)/V
-
-        self.p = p
-
+        # Flags and seeds
         self.seed = seed
-        
+
         # Fix all randomness globally
         np.random.seed(self.seed)
         random.seed(self.seed)
@@ -80,60 +69,36 @@ class ERCG():
         self.consistent = consistent
         self.special = special
 
-        def GenerateKComponentER(n, k, p):
-            sizes = [n // k] * k
-            for i in range(n % k):  
-                sizes[i] += 1
+        # Placeholders for subclasses
+        self.L = None
+        self.edges = None
 
-            components = []
-
-            for size in sizes:
-                connected = False
-                # Use a local variable to track tries
-                local_seed = self.seed  
-                while not connected:
-                    component = nx.erdos_renyi_graph(size, p, seed=local_seed)
-                    connected = nx.is_connected(component)
-                    local_seed += 1  # increment local seed for retries but don't modify self.seed
-                    
-                components.append(component)
-
-            # Relabel nodes to avoid overlaps
-            G = nx.disjoint_union_all(components)
-            return G
-
-        
-        self.G = GenerateKComponentER(self.V, self.k, p = self.p)
-
-        self.A = nx.adjacency_matrix(self.G).toarray()
-        self.edges = list(self.G.edges)
-
-        self.W = self.Weights()
-        self.L = self.Laplacian()
-        self.RandomConnectionGraph()
-    
-    def Weights(self):
-        W = np.zeros_like(self.A, dtype=float)
-        for edge in self.edges:
-            w = np.random.uniform(low=0.2, high=3)
-            W[edge[0], edge[1]] = w
-            W[edge[1], edge[0]] = w
-        return W
-
-    def Laplacian(self):
-        return np.diag(np.sum(self.W, axis=0)) - self.W
-
-    def RandomConnectionGraph(
+    def random_On(
             self
-    ):
-        def RandomOn(
-        ):
+        ) -> np.ndarray:
+            """ Generates a random d-dimensional orthogonal matrix
+
+            Returns
+            -------
+            np.ndarray
+                Matrix sampled from O(d) 
+            """
             Q, _ = np.linalg.qr(np.random.randn(self.d, self.d))
             if self.special:
                 if np.linalg.det(Q) < 0:
                     Q[0,:] *= - 1
             return Q
+    
+    def random_connection_graph(
+            self
+    ):
         
+        """ Generates a random d-dimensional connection over the graph
+        """
+
+        assert self.edges is not None, "Edges must be defined"
+        assert self.L is not None, "Laplacian must be defined"
+    
         self.nodes_frames = {
             v: None for v in range(self.V)
         }
@@ -150,7 +115,7 @@ class ERCG():
             if self.kron == True:
                 self.nodes_frames[v] = np.eye(self.d)
             else:
-                self.nodes_frames[v] = RandomOn()
+                self.nodes_frames[v] = self.random_On()
                 self.O[v * self.d : ( v + 1 ) * self.d , v * self.d : ( v + 1 ) * self.d] = np.copy(self.nodes_frames[v])
         
         # Define accordingly the On map on the respective edge
@@ -158,42 +123,57 @@ class ERCG():
             if self.consistent:
                 self.edges_map[e] = self.nodes_frames[e[0]].T @ self.nodes_frames[e[1]]
             else:
-                self.edges_map[e] = RandomOn()
-
-        # # Connection Adjacency matrix (block matrix)
-        # self.CA = np.zeros((self.d * self.V, self.d * self.V))
-        # for e in self.edges:
-        #     u, v = e[0], e[1]
-        #     self.CA[ u * self.d : (u + 1) * self.d, v * self.d : (v + 1) * self.d ] = self.W[e] * self.edges_map[e]
-        #     self.CA[ v * self.d : (v + 1) * self.d, u * self.d : (u + 1) * self.d ] = self.W[e] * self.edges_map[e].T
-
-        # # Connection Diagonal matrix (block matrix)
-        # self.CD = np.kron(np.diag(np.sum(self.W, axis = 0)), np.eye(self.d))
+                self.edges_map[e] = self.random_On()
 
         # Connection Laplacian matrix (block matrix)
         self.CL = self.O.T @ np.kron(self.L, np.eye(self.d)) @ self.O
         self.CL[np.isclose(self.CL, 0, atol=1e-6)] = 0
         
-    def CochainsSampling(
+    def cochains_sampling(
             self, 
-            N=1000, 
-            pseudoinv=True, 
-            normalized=False, 
-            seed = 42,
-            full=True,
-            noisy=False,
-            SNR = None
-            ):
-        
+            N : int = 1000, 
+            CL : np.ndarray = None,
+            pseudoinv : bool = True, 
+            normalized : bool = False, 
+            seed : int = 42,
+            full : bool = True,
+            noisy : bool = False,
+            SNR : float = None
+            ) -> CochainSample:
+        """ Method to sample 0-cochains from N(0, pinv(L) + sigma^2I)
+
+        Parameters
+        ----------
+        N : int
+            Number of signals
+        CL : np.ndarray
+            Placeholder to support different laplacian for perturbed sampling
+        pseudoinv : bool
+            Flag to whether use the pinv of the laplacian
+        normalized : bool 
+            Flag to whether normalize signals
+        full : bool
+            Flag to whether signals should be unpacked in local measurementes
+        noise : bool
+            Flag for AWGN
+        SNR : float
+            SNR for noisy signals
+
+        Returns
+        -------
+        CochainSample
+            Generated 0-cochains
+        """
+
+        CL_ = CL if CL is not None else self.CL 
         np.random.seed(seed)
         if pseudoinv:
-            Sigma = np.linalg.pinv(self.CL)
-
+            Sigma = np.linalg.pinv(CL_)
             X = np.random.multivariate_normal(mean=np.zeros(self.V * self.d), cov=Sigma, size=N).T
             X_GT = np.copy(X)
 
         else:
-            P = self.CL + np.eye(self.CL.shape[0])
+            P = self.CL + np.eye(CL_.shape[0])
             Sigma = np.linalg.pinv(P)
 
             X = np.random.randn(self.V * self.d, N)
@@ -210,7 +190,6 @@ class ERCG():
         
         if normalized:
             X = X / np.linalg.norm(X, axis=0)
-
 
         if not full:
             X = {
@@ -234,9 +213,17 @@ class ERCG():
         
     def Visualize(
         self, 
-        L = None,
-        save_dir = None
-        ):
+        L : np.ndarray = None,
+        save_dir : str = None
+        ) -> None:
+        """ Visualize the network with the given structure or the estimated one
+        Parameters
+        ----------
+        L : np.ndarray
+            Estimated Laplacian to visualize inferred networks
+        save_dir : str
+            Save directory for visualization     
+        """
 
         G = nx.Graph()
 
@@ -269,17 +256,48 @@ class ERCG():
         if save_dir is not None:
             plt.savefig(save_dir, dpi=300, bbox_inches='tight', format='pdf')
 
-    def Topological_perturbation_sampling(
+    def topological_perturbation_sampling(
             self,
-            p_tau,
-            seed,
-            M
-    ):
+            p_tau : float,
+            M : int,
+            seed : int = 42,
+            pseudoinv : bool = True, 
+            normalized : bool = False, 
+            full : bool = True,
+            noisy : bool = False,
+            SNR : float = None
+    ) -> CochainSample:
+        """ Sampling from a topologically perturbed version of the CG
+
+        Parameters
+        ----------
+
+        p_tau : float
+            Probability of connecting 
+        M : int
+            Number of signals to be generated
+        seed : int
+            Seed for reproducibility
+        pseudoinv : bool
+            Flag to whether use the pinv of the laplacian
+        normalized : bool 
+            Flag to whether normalize signals
+        full : bool
+            Flag to whether signals should be unpacked in local measurementes
+        noise : bool
+            Flag for AWGN
+        SNR : float
+            SNR for noisy signals
+
+        Returns
+        -------
+        
+        CochainsSample
+            Sampled 0-cochains
+        """
         np.random.seed(seed)
 
-        # Step 1: Identify connected components
-        # -------------------------------------
-        # Build adjacency matrix:
+        # Identify connected components CCs
         A = -(self.L - np.diag(np.diag(self.L)))  # Laplacian -> adjacency
         A = (A > 0).astype(int)
 
@@ -299,11 +317,10 @@ class ERCG():
                         stack.extend(neighbors)
                 components.append(comp)
 
-        # Step 2: Randomly connect different CCs
-        # --------------------------------------
+        # Randomly connect different CCs
         L_tilde = np.copy(self.L)
 
-        # Iterate over all pairs of *different* components
+        # Iterate over all pairs of different components
         for idx_a in range(len(components)):
             for idx_b in range(idx_a + 1, len(components)):
                 compA = components[idx_a]
@@ -321,298 +338,279 @@ class ERCG():
                             L_tilde[i, j] = -w
                             L_tilde[j, i] = -w
 
-        # Step 3: Sampling from perturbed distribution
-        # --------------------------------------------
+        # Sampling from perturbed distribution
         CL_tilde = self.O.T @ np.kron(L_tilde, np.eye(self.d)) @ self.O
-        Sigma = np.linalg.pinv(CL_tilde)
-        X = np.random.multivariate_normal(mean=np.zeros(self.V * self.d), cov=Sigma, size=M).T
+        X = self.cochains_sampling(N = M, CL = CL_tilde, pseudoinv= pseudoinv, normalized = normalized, seed = seed, full = full, noisy = noisy, SNR = SNR)
 
-        def SampleCovariance(X):
-            X_mean = np.mean(X, axis=1)
-            X_centered = X - X_mean.reshape(-1, 1)
-            S = (X_centered @ X_centered.T) / (X_centered.shape[1] - 1)
-            return S
-
-        covariance = SampleCovariance(X)
-
-        return CochainSample(
-            X=X,
-            covariance=covariance,
-            X_GT=X
-        ), L_tilde
-
-
-    def Geometric_perturbation_sampling(
+        return X, L_tilde
+    
+    def geometric_perturbation_sampling(
             self,
-            p_iota,
-            seed,
-            M
-    ):
+            p_iota : float,
+            M : int,
+            seed : int = 42,
+            pseudoinv : bool = True, 
+            normalized : bool = False, 
+            full : bool = True,
+            noisy : bool = False,
+            SNR : float = None
+    ) -> CochainSample:
+        """ Sampling from a geometrically perturbed version of the CG
+
+        Parameters
+        ----------
+
+        p_iota : float
+            Probability of perturbing the connection over an edge
+        M : int
+            Number of signals to be generated
+        seed : int
+            Seed for reproducibility
+        pseudoinv : bool
+            Flag to whether use the pinv of the laplacian
+        normalized : bool 
+            Flag to whether normalize signals
+        full : bool
+            Flag to whether signals should be unpacked in local measurementes
+        noise : bool
+            Flag for AWGN
+        SNR : float
+            SNR for noisy signals
+        Returns
+        -------
+        CochainSample
+            Sampled 0-cochains
+        """
         np.random.seed(seed)
 
-        def RandomOn():
-            Q, _ = np.linalg.qr(np.random.randn(self.d, self.d))
-            if self.special and np.linalg.det(Q) < 0:
-                Q[0,:] *= -1
-            return Q
-
         # Perturbation of transport maps
-        L_tilde = np.copy(self.CL)
+        CL_tilde = np.copy(self.CL)
         for e in self.edges:
             if np.random.rand() < p_iota:
                 u = e[0]
                 v = e[1]
-                R = RandomOn()
+                R = self.random_On()
 
-                L_uv = L_tilde[u * self.d : ( u + 1 ) * self.d, v * self.d : ( v + 1 ) * self.d] 
-                L_vu = L_tilde[v * self.d : ( v + 1 ) * self.d, u * self.d : ( u + 1 ) * self.d] 
+                L_uv = CL_tilde[u * self.d : ( u + 1 ) * self.d, v * self.d : ( v + 1 ) * self.d] 
+                L_vu = CL_tilde[v * self.d : ( v + 1 ) * self.d, u * self.d : ( u + 1 ) * self.d] 
 
-                L_tilde[u * self.d : ( u + 1 ) * self.d, v * self.d : ( v + 1 ) * self.d] = R @ L_uv
-                L_tilde[v * self.d : ( v + 1 ) * self.d, u * self.d : ( u + 1 ) * self.d] = L_vu @ R.T
-
+                CL_tilde[u * self.d : ( u + 1 ) * self.d, v * self.d : ( v + 1 ) * self.d] = R @ L_uv
+                CL_tilde[v * self.d : ( v + 1 ) * self.d, u * self.d : ( u + 1 ) * self.d] = L_vu @ R.T
+                
         # Sampling from perturbed distribution
-        Sigma = np.linalg.pinv(L_tilde)
-        X = np.random.multivariate_normal(mean=np.zeros(self.V * self.d), cov=Sigma, size=M).T   
+        X = self.cochains_sampling(N = M, CL = CL_tilde, pseudoinv= pseudoinv, normalized = normalized, seed = seed, full = full, noisy = noisy, SNR = SNR)
 
-        def SampleCovariance(X):
-            X_mean = np.mean(X, axis=1)
-            X_centered = X - X_mean.reshape(-1,1)
-            S = (X_centered @ X_centered.T) / (X_centered.shape[1] - 1)
-            return S
+        return X, CL_tilde
+    
+class ERCG(CG):
+    ''' This class implement a ER Connection Graph with a consistent connection graph built on top of it enforcing a certain number of connected components
 
-        covariance = SampleCovariance(X)
-
-        return CochainSample(
-            X=X, 
-            covariance=covariance, 
-            X_GT = X
-        )
-
-class RBFCG():
-
+    Parameters
+    ----------
+    V : int 
+        Number of nodes in the network
+    d : int 
+        Fiber (stalk) dimension
+    k : int
+        Number of connected components
+    seed : float
+        Seed for randomness
+    p : float
+        Probability of connection 
+    kron : bool
+        Flag for trivial bundle
+    consistent : bool
+        Flag for consistency
+    special : bool
+        Flag for special orthogonal group
+    '''
+    
     def __init__(
             self, 
-            V,
-            d = 3, 
+            V : int,
+            d : int, 
+            k : int,
+            w_LB : float = 0.2,
+            w_UB : float = 3,
             seed = 42,
+            p = None,
             kron = False,
             consistent = True, 
             special = True):
+        super().__init__(V, d, seed, kron, consistent, special)
+
+        self.k = k  # Number of connected components
+        self.q = self.V - self.k
         
-        self.d = d
-        self.V = V
+        # Bounds on the weight distribution
+        self.w_LB = w_LB 
+        self.w_UB = w_UB
 
-        self.seed = seed
-        
-        # Fix all randomness globally
-        np.random.seed(self.seed)
-        random.seed(self.seed)
+        if p is None:
+            p = 1.1 * np.log(self.V)/V
 
-        self.kron = kron
-        self.consistent = consistent
-        self.special = special
+        self.p = p
 
-        def GenerateGeometricGaussianWeighted(N, sigma, dim=3, seed=None):
+        def generate_Kcomponent_ER():
+            """ Helper to generate a ER graph with a given number of connected components   
+
+            Returns
+            -------
+            nx.Graph
+                Istantiation from networkx graph
             """
-            Generate a weighted geometric graph in the unit cube [0,1]^dim.
-            
-            Edge weight between nodes i and j is:
-                w_ij = exp(-||x_i - x_j||^2 / (2 * sigma^2))
+            sizes = [self.V // k] * self.k
+            for i in range(self.V % self.k):  
+                sizes[i] += 1
+
+            components = []
+
+            for size in sizes:
+                connected = False
+                # Use a local variable to track tries
+                local_seed = self.seed  
+                while not connected:
+                    component = nx.erdos_renyi_graph(size, self.p, seed=local_seed)
+                    connected = nx.is_connected(component)
+                    local_seed += 1  # increment local seed for retries but don't modify self.seed
+                    
+                components.append(component)
+
+            # Relabel nodes to avoid overlaps
+            G = nx.disjoint_union_all(components)
+            return G
+
+        self.G = generate_Kcomponent_ER(self.V, self.k, p = self.p)
+
+        self.A = nx.adjacency_matrix(self.G).toarray()
+        self.edges = list(self.G.edges)
+
+        self.W = self.weights()
+        self.L = self.laplacian()
+        self.random_connection_graph()
+    
+    def weights(self):
+        W = np.zeros_like(self.A, dtype=float)
+        for edge in self.edges:
+            w = np.random.uniform(low=0.2, high=3)
+            W[edge[0], edge[1]] = w
+            W[edge[1], edge[0]] = w
+        return W
+
+    def laplacian(self):
+        return np.diag(np.sum(self.W, axis=0)) - self.W
+
+class RBFCG(CG):
+    ''' This class implements a Random Geometric Graph with a consistent connection graph built on top of it
+
+    Parameters
+    ----------
+    V : int 
+        Number of nodes in the network
+    d : int 
+        Fiber (stalk) dimension
+    sigma : float
+        Parameter for the bandwidth of the Gaussian kernel
+    cutoff : float
+        Threshold to cut edges
+    seed : float
+        Seed for randomness
+    kron : bool
+        Flag for trivial bundle
+    consistent : bool
+        Flag for consistency
+    special : bool
+        Flag for special orthogonal group
+    '''
+    def __init__(
+            self, 
+            V : int,
+            d : int, 
+            sigma : float = 0.5,
+            cutoff : float = 0.75,
+            seed : int = 42,
+            kron : bool = False,
+            consistent : bool = True, 
+            special : bool = True
+        ) -> None:
+        super().__init__(V, d, seed, kron, consistent, special)
+
+        def generate_geometric_gaussian_weighted():
+            """ Generate a RBF graph sampling V points in [0,1]^d
+
+            Returns
+            -------
+            nx.Graph
+                Istantiation from networkx Graph object
             """
             rng = np.random.default_rng(seed)
 
-            # 1. Sample coordinates in [0,1]^dim
-            X = rng.random((N, dim))
+            # 1. Sample coordinates in [0,1]^(d+1)
+            X = rng.random((self.V, self.d + 1))
 
             # 2. Pairwise squared distances (vectorized)
             diff = X[:, None, :] - X[None, :, :]
             dist2 = np.sum(diff**2, axis=2)
 
-            # 3. Gaussian kernel weights
+            # Gaussian kernel weights and thresholding
             W = np.exp(-dist2 / (2 * sigma**2))
-            # W[W > np.quantile(W, 0.4)] = 0
-            W[W < 0.75] = 0
+            W[W < cutoff] = 0
 
-            # 4. Remove self-weights (optional, set diag to 0)
+            # Remove self-weights (optional, set diag to 0)
             np.fill_diagonal(W, 0.0)
 
-            # 5. Create weighted graph
+            # Create weighted graph
             G = nx.from_numpy_array(W)
 
             return G
 
-        self.G = GenerateGeometricGaussianWeighted(self.V, sigma =0.5,)
+        self.G = generate_geometric_gaussian_weighted()
 
         self.L = nx.laplacian_matrix(self.G).toarray()
         self.edges = list(self.G.edges)
 
-        self.RandomConnectionGraph()
+        self.random_connection_graph()
 
-    def RandomConnectionGraph(
-            self
-    ):
-        def RandomOn(
-        ):
-            Q, _ = np.linalg.qr(np.random.randn(self.d, self.d))
-            if self.special:
-                if np.linalg.det(Q) < 0:
-                    Q[0,:] *= - 1
-            return Q
-        
-        self.nodes_frames = {
-            v: None for v in range(self.V)
-        }
+class SBMCG(CG):
+    """ This class implement a Stochastic Block Model with a consistent connection graph built on top of it
 
-        self.O = np.zeros((self.d*self.V, self.d*self.V))
-
-        self.edges_map = {
-            e: None for e in self.edges
-        }
-
-        # Define the bundle 
-        # Define a orthonormal basis for each node:
-        for v in range(self.V):
-            if self.kron == True:
-                self.nodes_frames[v] = np.eye(self.d)
-            else:
-                self.nodes_frames[v] = RandomOn()
-                self.O[v * self.d : ( v + 1 ) * self.d , v * self.d : ( v + 1 ) * self.d] = np.copy(self.nodes_frames[v])
-        
-        # Define accordingly the On map on the respective edge
-        for e in self.edges:
-            if self.consistent:
-                self.edges_map[e] = self.nodes_frames[e[0]].T @ self.nodes_frames[e[1]]
-            else:
-                self.edges_map[e] = RandomOn()
-
-        # # Connection Adjacency matrix (block matrix)
-        # self.CA = np.zeros((self.d * self.V, self.d * self.V))
-        # for e in self.edges:
-        #     u, v = e[0], e[1]
-        #     self.CA[ u * self.d : (u + 1) * self.d, v * self.d : (v + 1) * self.d ] = self.W[e] * self.edges_map[e]
-        #     self.CA[ v * self.d : (v + 1) * self.d, u * self.d : (u + 1) * self.d ] = self.W[e] * self.edges_map[e].T
-
-        # # Connection Diagonal matrix (block matrix)
-        # self.CD = np.kron(np.diag(np.sum(self.W, axis = 0)), np.eye(self.d))
-
-        # Connection Laplacian matrix (block matrix)
-        self.CL = self.O.T @ np.kron(self.L, np.eye(self.d)) @ self.O
-        self.CL[np.isclose(self.CL, 0, atol=1e-6)] = 0
-        
-    def CochainsSampling(
-            self, 
-            N=1000, 
-            pseudoinv=True, 
-            normalized=False, 
-            seed = 42,
-            full=True,
-            noisy=False,
-            SNR = None
-            ):
-        
-        np.random.seed(seed)
-        if pseudoinv:
-            Sigma = np.linalg.pinv(self.CL)
-
-            X = np.random.multivariate_normal(mean=np.zeros(self.V * self.d), cov=Sigma, size=N).T
-            X_GT = np.copy(X)
-
-        else:
-            P = self.CL + np.eye(self.CL.shape[0])
-            Sigma = np.linalg.pinv(P)
-
-            X = np.random.randn(self.V * self.d, N)
-            M = np.linalg.cholesky(Sigma)
-            X = M.T @ X
-
-        if noisy:
-            assert SNR is not None, "Provide a noise variance value"
-            signal_power = np.mean(X ** 2)
-            SNR_linear = 10 ** (SNR / 10)
-
-            noise_power = signal_power / SNR_linear
-            X += np.random.randn(*X.shape) * np.sqrt(noise_power)
-        
-        if normalized:
-            X = X / np.linalg.norm(X, axis=0)
-
-
-        if not full:
-            X = {
-                v: X[v*self.d:(v + 1)*self.d, :] / np.linalg.norm(X[v*self.d:(v + 1)*self.d, :], axis=0)
-                for v in range(self.V)
-            }
-
-        def SampleCovariance(X):
-            X_mean = np.mean(X, axis=1)
-            X_centered = X - X_mean.reshape(-1,1)
-            S = (X_centered @ X_centered.T) / (X_centered.shape[1] - 1)
-            return S
-
-        covariance = SampleCovariance(X if full else np.vstack([v for v in X.values()]))
-
-        return CochainSample(
-            X=X, 
-            covariance=covariance, 
-            X_GT = X_GT
-            )
-        
-    def Visualize(
-        self, 
-        L = None,
-        save_dir = None
-        ):
-
-        G = nx.Graph()
-
-        if L is not None:
-            for i in range(self.V):
-                for j in range(i + 1, self.V):
-                    if L[i, j] != 0:
-                        G.add_edge(i, j, weight=-L[i, j])  
-        else:
-            for i in range(self.V):
-                for j in range(i + 1, self.V):
-                    if self.L[i, j] != 0:
-                        G.add_edge(i, j, weight=-self.L[i, j])  
-    
-        
-        # Get the edge weights from the Laplacian matrix
-        edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
-        pos = nx.kamada_kawai_layout(self.G,)
-        fig, ax = plt.subplots(figsize=(8, 8))
-        nx.draw(
-            G, pos, with_labels=True, node_color='lightblue',
-            edge_color=edge_weights, width=2, edge_cmap=plt.cm.Blues, ax=ax
-        )
-        
-        # Colorbar to show edge weights
-        sm = plt.cm.ScalarMappable(cmap=plt.cm.Blues, 
-                                norm=plt.Normalize(vmin=min(edge_weights), vmax=max(edge_weights)))
-        plt.colorbar(sm, label='Edge Weights', ax=ax)
-
-        if save_dir is not None:
-            plt.savefig(save_dir, dpi=300, bbox_inches='tight', format='pdf')
-
-class SBMCG():
-
+    Parameters
+    ----------
+    V : int 
+        Number of nodes in the network
+    d : int 
+        Fiber (stalk) dimension
+    k : int
+        Number of communities
+    p_k : np.ndarray
+        Discrete distribution over the communities
+    p_in : float
+        Intra-cluster probability of wiring
+    p_out : float
+        Inter-cluster probability of wiring
+    seed : float
+        Seed for randomness
+    kron : bool
+        Flag for trivial bundle
+    consistent : bool
+        Flag for consistency
+    special : bool
+        Flag for special orthogonal group
+    """
     def __init__(
             self, 
             V,
-            d = 3, 
-            seed = 42,
-            k = 3,
-            p_k = None,
-            p_in = None,
-            p_out = None,
-            kron = False,
-            consistent = True, 
-            special = True):
-        
-        self.d = d
-        self.V = V
-
-        self.seed = seed
+            d : int, 
+            seed : int,
+            k : int,
+            p_k : np.ndarray,
+            p_in : float,
+            p_out : float,
+            kron : bool = False,
+            consistent : bool = True, 
+            special : bool = True
+        ) -> None:
+        super().__init__(V, d, seed, kron, consistent, special)
         
         # Stochastic block model parameters
         self.k = k                             # Number of communities
@@ -638,9 +636,7 @@ class SBMCG():
         self.L = nx.laplacian_matrix(self.G).toarray()
         self.edges = list(self.G.edges)
 
-        self.RandomConnectionGraph()
-
-    # --- Proper class methods ---
+        self.random_connection_graph()
 
     def block_assignment(self):
         self.B = {node: np.random.choice(self.k, p=self.p_k)
@@ -665,206 +661,67 @@ class SBMCG():
         self.block_transition()
         self.edge_generation()
 
-    def RandomConnectionGraph(
-            self
-    ):
-        def RandomOn(
-        ):
-            Q, _ = np.linalg.qr(np.random.randn(self.d, self.d))
-            if self.special:
-                if np.linalg.det(Q) < 0:
-                    Q[0,:] *= - 1
-            return Q
-        
-        self.nodes_frames = {
-            v: None for v in range(self.V)
-        }
 
-        self.O = np.zeros((self.d*self.V, self.d*self.V))
+class GridCG(CG):
+    """ This class implements a 2D lattice of a given size with a consistent connection graph built on top of it
 
-        self.edges_map = {
-            e: None for e in self.edges
-        }
+    Parameters
+    ----------
 
-        # Define the bundle 
-        # Define a orthonormal basis for each node:
-        for v in range(self.V):
-            if self.kron == True:
-                self.nodes_frames[v] = np.eye(self.d)
-            else:
-                self.nodes_frames[v] = RandomOn()
-                self.O[v * self.d : ( v + 1 ) * self.d , v * self.d : ( v + 1 ) * self.d] = np.copy(self.nodes_frames[v])
-        
-        # Define accordingly the On map on the respective edge
-        for e in self.edges:
-            if self.consistent:
-                self.edges_map[e] = self.nodes_frames[e[0]].T @ self.nodes_frames[e[1]]
-            else:
-                self.edges_map[e] = RandomOn()
+    side : int
+        Length of the size of the lattice: number of nodes would be size**2
+    d : int 
+        Fiber (stalk) dimension
+    w_LB : float
+        Lower bound for weights distribution
+    w_UB : float
+        Upper bound for weights distribution
+    kron : bool
+        Flag for trivial bundle
+    consistent : bool
+        Flag for consistency
+    special : bool
+        Flag for special orthogonal group    
+    """
 
-        # # Connection Adjacency matrix (block matrix)
-        # self.CA = np.zeros((self.d * self.V, self.d * self.V))
-        # for e in self.edges:
-        #     u, v = e[0], e[1]
-        #     self.CA[ u * self.d : (u + 1) * self.d, v * self.d : (v + 1) * self.d ] = self.W[e] * self.edges_map[e]
-        #     self.CA[ v * self.d : (v + 1) * self.d, u * self.d : (u + 1) * self.d ] = self.W[e] * self.edges_map[e].T
-
-        # # Connection Diagonal matrix (block matrix)
-        # self.CD = np.kron(np.diag(np.sum(self.W, axis = 0)), np.eye(self.d))
-
-        # Connection Laplacian matrix (block matrix)
-        self.CL = self.O.T @ np.kron(self.L, np.eye(self.d)) @ self.O
-        self.CL[np.isclose(self.CL, 0, atol=1e-6)] = 0
-        
-    def CochainsSampling(
-            self, 
-            N=1000, 
-            pseudoinv=True, 
-            normalized=False, 
-            seed = 42,
-            full=True,
-            noisy=False,
-            SNR = None
-            ):
-        
-        np.random.seed(seed)
-        if pseudoinv:
-            Sigma = np.linalg.pinv(self.CL)
-
-            X = np.random.multivariate_normal(mean=np.zeros(self.V * self.d), cov=Sigma, size=N).T
-            X_GT = np.copy(X)
-
-        else:
-            P = self.CL + np.eye(self.CL.shape[0])
-            Sigma = np.linalg.pinv(P)
-
-            X = np.random.randn(self.V * self.d, N)
-            M = np.linalg.cholesky(Sigma)
-            X = M.T @ X
-
-        if noisy:
-            assert SNR is not None, "Provide a noise variance value"
-            signal_power = np.mean(X ** 2)
-            SNR_linear = 10 ** (SNR / 10)
-
-            noise_power = signal_power / SNR_linear
-            X += np.random.randn(*X.shape) * np.sqrt(noise_power)
-        
-        if normalized:
-            X = X / np.linalg.norm(X, axis=0)
-
-
-        if not full:
-            X = {
-                v: X[v*self.d:(v + 1)*self.d, :] / np.linalg.norm(X[v*self.d:(v + 1)*self.d, :], axis=0)
-                for v in range(self.V)
-            }
-
-        def SampleCovariance(X):
-            X_mean = np.mean(X, axis=1)
-            X_centered = X - X_mean.reshape(-1,1)
-            S = (X_centered @ X_centered.T) / (X_centered.shape[1] - 1)
-            return S
-
-        covariance = SampleCovariance(X if full else np.vstack([v for v in X.values()]))
-
-        return CochainSample(
-            X=X, 
-            covariance=covariance, 
-            X_GT = X_GT
-            )
-        
-    def Visualize(
-        self, 
-        L = None,
-        save_dir = None
-        ):
-
-        G = nx.Graph()
-
-        if L is not None:
-            for i in range(self.V):
-                for j in range(i + 1, self.V):
-                    if L[i, j] != 0:
-                        G.add_edge(i, j, weight=-L[i, j])  
-        else:
-            for i in range(self.V):
-                for j in range(i + 1, self.V):
-                    if self.L[i, j] != 0:
-                        G.add_edge(i, j, weight=-self.L[i, j])  
-    
-        
-        # Get the edge weights from the Laplacian matrix
-        edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
-
-        pos = nx.spring_layout(self.G,)
-        fig, ax = plt.subplots(figsize=(8, 8))
-        nx.draw(
-            G, pos, with_labels=True, node_color='lightblue',
-            edge_color='blue', width=2, edge_cmap=plt.cm.Blues, ax=ax
-        )
-        
-        if save_dir is not None:
-            plt.savefig(save_dir, dpi=300, bbox_inches='tight', format='pdf')
-
-class GridCG():
-    '''
-    Implements a 2D grid graph with a consistent connection graph built on top of it.
-
-    INPUT:
-        side: int. The number of nodes along one side of the grid (total nodes = side^2)
-        d: int. The dimension of the stalks over the nodes
-        consistent: bool. Whether the connection graph is consistent
-        special: bool. Whether the maps are sampled from SO(d)
-
-    METHODS:
-        Weights: Sample weights for each edge from Unif(0.1,3)
-        Laplacian: Compute the weighted Laplacian
-        RandomConnectionGraph: Builds a connection graph on top of the grid and derives operators
-        CochainsSampling: Samples from a PIAGMRF where the connection Laplacian acts as the precision
-        Visualize: Plots the underlying grid graph
-    '''
-    
     def __init__(
             self, 
-            side,
-            d=3, 
-            seed=42,
-            kron=False,
-            consistent=True, 
-            special=True):
+            side : int,
+            d : int, 
+            w_LB : float = 0.2,
+            w_UB : float = 3,
+            seed : int = 42,
+            kron : bool =False,
+            consistent : bool =True, 
+            special : bool =True
+        ) -> None:
+        super().__init__(V = side ** 2, d = d, seed = seed, kron = kron, consitent = consistent, special = special)
         
-        self.side = side
-        self.V = side**2
-        self.d = d
-        self.k = 1  # only one connected component for grid
-        self.q = self.V - self.k
+        self.w_LB = w_LB
+        self.w_UB = w_UB
 
-        self.seed = seed
-        np.random.seed(seed)
-        random.seed(seed)
-
-        self.kron = kron
-        self.consistent = consistent
-        self.special = special
-
-        # === Build the 2D grid graph ===
+        # Build the 2D grid graph 
         self.G = nx.grid_2d_graph(side, side)
-        # Relabel (i, j) -> single integer node
+
         mapping = {node: idx for idx, node in enumerate(self.G.nodes())}
         self.G = nx.relabel_nodes(self.G, mapping)
 
         self.A = nx.adjacency_matrix(self.G).toarray()
         self.edges = list(self.G.edges)
 
-        # === Assign weights and Laplacian ===
         self.W = self.Weights()
         self.L = self.Laplacian()
 
-        # === Build connection graph ===
-        self.RandomConnectionGraph()
+        self.random_connection_graph()
     
-    def Weights(self):
+    def Weights(self) -> np.ndarray:
+        """ Sample edge weights from a uniform distribution
+
+        Returns
+        -------
+        np.ndarray
+            Weighted adjacency matrix
+        """
         W = np.zeros_like(self.A, dtype=float)
         for edge in self.edges:
             w = np.random.uniform(low=0.2, high=3)
@@ -873,364 +730,11 @@ class GridCG():
         return W
 
     def Laplacian(self):
+        """ Builds the combinatorial laplacian from the adjacency
+
+        Returns
+        -------
+        np.ndarray
+            Combinatorial laplacian matrix
+        """
         return np.diag(np.sum(self.W, axis=0)) - self.W
-
-    def RandomConnectionGraph(self):
-        def RandomOn():
-            Q, _ = np.linalg.qr(np.random.randn(self.d, self.d))
-            if self.special and np.linalg.det(Q) < 0:
-                Q[0,:] *= -1
-            return Q
-        
-        self.nodes_frames = {v: None for v in range(self.V)}
-        self.O = np.zeros((self.d*self.V, self.d*self.V))
-        self.edges_map = {e: None for e in self.edges}
-
-        # Define local orthonormal bases for each node
-        for v in range(self.V):
-            if self.kron:
-                self.nodes_frames[v] = np.eye(self.d)
-            else:
-                self.nodes_frames[v] = RandomOn()
-                self.O[v*self.d:(v+1)*self.d, v*self.d:(v+1)*self.d] = self.nodes_frames[v]
-        
-        # Define connection maps on edges
-        for e in self.edges:
-            if self.consistent:
-                self.edges_map[e] = self.nodes_frames[e[0]].T @ self.nodes_frames[e[1]]
-            else:
-                self.edges_map[e] = RandomOn()
-
-        # Connection Laplacian (block matrix)
-        self.CL = self.O.T @ np.kron(self.L, np.eye(self.d)) @ self.O
-        self.CL[np.isclose(self.CL, 0, atol=1e-6)] = 0
-        
-    def CochainsSampling(
-            self, 
-            N=1000, 
-            pseudoinv=True, 
-            normalized=False, 
-            seed=42,
-            full=True,
-            noisy=False,
-            SNR=None):
-        
-        np.random.seed(seed)
-        if pseudoinv:
-            Sigma = np.linalg.pinv(self.CL)
-            X = np.random.multivariate_normal(mean=np.zeros(self.V * self.d), cov=Sigma, size=N).T
-            X_GT = np.copy(X)
-        else:
-            P = self.CL + np.eye(self.CL.shape[0])
-            Sigma = np.linalg.pinv(P)
-            X = np.random.randn(self.V * self.d, N)
-            M = np.linalg.cholesky(Sigma)
-            X = M.T @ X
-            X_GT = np.copy(X)
-
-        if noisy:
-            assert SNR is not None, "Provide a noise variance value"
-            signal_power = np.mean(X ** 2)
-            SNR_linear = 10 ** (SNR / 10)
-            noise_power = signal_power / SNR_linear
-            X += np.random.randn(*X.shape) * np.sqrt(noise_power)
-        
-        if normalized:
-            X = X / np.linalg.norm(X, axis=0)
-
-        if not full:
-            X = {
-                v: X[v*self.d:(v+1)*self.d, :] / np.linalg.norm(X[v*self.d:(v+1)*self.d, :], axis=0)
-                for v in range(self.V)
-            }
-
-        def SampleCovariance(X):
-            X_mean = np.mean(X, axis=1)
-            X_centered = X - X_mean.reshape(-1,1)
-            S = (X_centered @ X_centered.T) / (X_centered.shape[1] - 1)
-            return S
-
-        covariance = SampleCovariance(X if full else np.vstack([v for v in X.values()]))
-
-        return CochainSample(
-            X=X, 
-            covariance=covariance, 
-            X_GT = X_GT
-            )
-        
-    def Visualize(self, L=None, save_dir=None):
-        G = nx.Graph()
-        if L is not None:
-            for i in range(self.V):
-                for j in range(i + 1, self.V):
-                    if L[i, j] != 0:
-                        G.add_edge(i, j, weight=-L[i, j])  
-        else:
-            for i in range(self.V):
-                for j in range(i + 1, self.V):
-                    if self.L[i, j] != 0:
-                        G.add_edge(i, j, weight=-self.L[i, j])  
-    
-        edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
-        fig, ax = plt.subplots(figsize=(8, 8))
-        nx.draw(
-            G,  pos = {i * self.side + j: (j, -i) for i in range(self.side) for j in range(self.side)}, with_labels=True, node_color='lightblue',
-            edge_color=edge_weights, width=2, edge_cmap=plt.cm.Blues, ax=ax
-        )
-        
-        sm = plt.cm.ScalarMappable(cmap=plt.cm.Blues, 
-                                norm=plt.Normalize(vmin=min(edge_weights), vmax=max(edge_weights)))
-        plt.colorbar(sm, label='Edge Weights', ax=ax)
-
-        if save_dir is not None:
-            plt.savefig(save_dir, dpi=300, bbox_inches='tight', format='pdf')
-     
-class FibonacciSphereGraph:
-    """
-    Generates a Fibonacci-lattice sphere and constructs a k-NN graph over it with graph alignment and VDM approximation
-    """
-    
-    def __init__(
-            self, 
-            epsilon_geometric = 1,
-            V = 200, 
-            k_neighbors = 6,
-            kernel_mode = 'Gaussian'):
-        
-        self.epsilon_geometric = epsilon_geometric
-        self.V = V
-        self.k_neighbors = k_neighbors
-
-        self.kernel_mode = kernel_mode
-
-        self.d = 3
-        self.d_hat = 2
-
-        self._generate_points()
-        self._build_knn_graph()
-        self._graph_alingment()
-        self._connection_laplacian()
-        self._spectral_synchronization(op = 'Normalized')
-        self._spectral_synchronization(op = 'Unnormalized')
-    
-    def _generate_points(self):
-        '''
-        Generate a Fibonacci lattice on the unit sphere
-        '''
-        
-        indices = np.arange(0, self.V, dtype=float) + 0.5
-        phi = np.arccos(1 - 2 * indices/self.V)
-        theta = np.pi * (1 + 5**0.5) * indices
-        x = np.sin(phi) * np.cos(theta)
-        y = np.sin(phi) * np.sin(theta)
-        z = np.cos(phi)
-        self.points = np.vstack((x, y, z)).T
-
-    def _build_knn_graph(self):
-        '''
-        Construct a k-NN graph from the Fibonacci lattice
-        '''
-        tree = cKDTree(self.points)
-        edge_set = set()
-        edges = []
-
-        for i, point in enumerate(self.points):
-            _, neighbors = tree.query(point, k=self.k_neighbors + 1)
-            for j in neighbors[1:]:  # skip self
-                if (i, j) not in edge_set and (j, i) not in edge_set:
-                    edges.append((i, j))
-                    edge_set.add((i, j))
-
-        n_edges = len(edges)
-        B = np.zeros((self.V, n_edges), dtype=float)
-
-        for edge_id, (i, j) in enumerate(edges):
-            B[i, edge_id] = 1
-            B[j, edge_id] = -1
-
-        self.edges = edges
-        self.B = B
-        self.L = B @ B.T
-        self.A = self.L - np.diag(np.diag(self.L))
-    
-    def _graph_alingment(self):
-        '''
-        Implement the graph Local PCA as in Barbero F., "Sheaf Neural Networks with Connection Laplacians"
-        '''
-        self.local_bases = {v: None for v in range(self.V)}
-
-        for v in range(self.V):
-            neighbors_index = np.where(self.A[v,:] != 0)[0]
-            X_v = self.points[neighbors_index, ]
-            U, _, _ = np.linalg.svd(X_v.T)
-            self.local_bases[v] = U[:, 0 : 2]   
-
-    def _connection_laplacian(
-            self
-    ):
-        '''
-        Compute a geometric graph and a connection laplacian over it via Procrustes alignment
-        '''
-
-        # Compute the Procrustes transformation and some accessory stuff
-        self.maps = {}
-        self.degree_matrices = {}
-        self.ndegree_matrices = {}
-
-        self.D = np.kron(np.diag(np.diag(self.L)), np.eye(self.d_hat))
-        self.DN = np.sqrt(np.linalg.inv(self.D))
-        self.O = np.zeros((self.V * self.d_hat, self.V * self.d_hat))
-
-        for i in range(self.V):
-            # Retrieve node SO(n) basis
-            # U, _, Vt = np.linalg.svd(self.local_bases[i].T @ self.local_bases[i])
-            # M = U @ Vt
-            # if np.linalg.det(M) < 0:
-            #     M[0,:] *= - 1
-
-            # self.O[ i * self.d_hat : ( i + 1 ) * self.d_hat, i * self.d_hat : ( i + 1 ) * self.d_hat] = M
-
-            for j in range(i + 1, self.V):
-                if self.L[i, j] != 0:
-
-                    O_ij_tilde = self.local_bases[i].T @ self.local_bases[j]
-                    U, _, Vt = np.linalg.svd(O_ij_tilde)
-                    O_ij = U @ Vt
-
-                    self.maps[(i,j)] = O_ij
-
-        # Computing the normalized connection Laplacian and the unnormalized connection Laplacian 
-        self.S = np.zeros((self.V * self.d_hat, self.V * self.d_hat))
-    
-        for edge in self.maps.keys():
-            i = edge[0]
-            j = edge[1]
-
-            self.S[i * self.d_hat : ( i + 1 ) * self.d_hat, j * self.d_hat : ( j + 1 ) * self.d_hat] = self.maps[edge]
-            self.S[j * self.d_hat : ( j + 1 ) * self.d_hat, i * self.d_hat : ( i + 1 ) * self.d_hat] = self.maps[edge].T
-
-        self.CLN = self.DN @ ( self.S - self.D ) @ self.DN                                  # Normalized connection Laplacian
-        self.CLUN = self.S - self.D                                                         # Unnormalized connection Laplacian
-        # self.CLUN_FLAT = - ( self.O.T @ np.kron(self.L, np.eye(self.d_hat)) @ self.O )      # Flat bundle connection Laplacian
-
-        self.laplacians = {
-            'Normalized': self.CLN,
-            'Unnormalized': self.CLUN,
-            # 'FlatBundle': self.CLUN_FLAT
-        }
-
-    def _proj_to_O(self, M):
-        """Project a d_hat x d_hat matrix to O(d_hat) via SVD; optional force SO(d_hat)."""
-        U, _, Vt = svd(M, full_matrices=False)
-        R = U @ Vt
-        # Optional: force rotation (SO) instead of reflection + rotation:
-        if np.linalg.det(R) < 0:
-            U[:, -1] *= -1
-            R = U @ Vt
-        return R
-
-    def _spectral_synchronization(self, op='Unnormalized', k=None):
-        """
-        Run spectral synchronization on a chosen connection Laplacian (Normalized or Unnormalized).
-        Returns:
-        g : list of n (d_hat x d_hat) orthogonal node frames
-        F : dict (i,j) -> d_hat x d_hat flat transports = g_i^T g_j (only for edges present in self.maps)
-        Also stores assembled flat Laplacian under self.laplacians['FlatFromSync_{op}'].
-        """
-        if op not in self.laplacians:
-            raise ValueError(f"op must be one of {list(self.laplacians.keys())}")
-
-        Lc = self.laplacians[op]
-        n = self.V
-        d = self.d_hat
-        N = n * d
-
-        # Number of eigenvectors to extract: default = d (the fiber dimension)
-        if k is None:
-            k = d
-
-        # We expect Lc to be symmetric; convert to sparse if dense large
-        try:
-            # Use eigsh for symmetric/hermitian
-            vals, vecs = eigsh(sp.csr_matrix(Lc), k=k, which='SM')
-        except Exception:
-            # Fallback to dense eigh if eigsh fails (small graphs)
-            vals_all, vecs_all = eigh(Lc)
-            vecs = vecs_all[:, :k]
-
-        U = vecs.real  # N x d
-
-        # Build orthogonal frames g_i by SVD projection of node blocks
-        g = []
-        for i in range(n):
-            block = U[i*d:(i+1)*d, :]  # d x d
-            # If block is close to rank-deficient, SVD projection still works
-            Ri = self._proj_to_O(block)
-            g.append(Ri)
-
-        # Build flat transports F_ij = g_i^T g_j only for edges present in maps
-        F = {}
-        for (i, j) in self.maps.keys():
-            F[(i, j)] = g[i].T @ g[j]
-            F[(j, i)] = F[(i, j)].T
-
-        blocks = []
-        for i in range(n):
-            blocks.append(g[i])
-        O_sync = sp.block_diag(blocks, format='csr')   
-
-        L_graph = sp.csr_matrix(self.L)  # V x V
-        I_d = sp.eye(d, format='csr')
-        Kron = sp.kron(L_graph, I_d, format='csr')    
-
-        CL_flat_sync = - (O_sync.T @ Kron @ O_sync)   
-
-        # Store into laplacians dictionary 
-        key = f'FlatFromSync_{op}'
-        self.laplacians[key] = CL_flat_sync.toarray() if sp.issparse(CL_flat_sync) else CL_flat_sync
-
-    def _tangent_bundle_signal(self, X):
-        '''
-        Project a vector field over the discretized tangent bundle
-        '''
-        
-        f = np.zeros((2 * self.V, X.shape[1]))
-        for v in range(self.V):
-            f[v * 2 : ( v + 1 ) * 2] = self.local_bases[v].T @ X[v * 3 : ( v + 1 ) * 3]
-        
-        return f
-    
-    def _cochains_sampling(
-            self, 
-            N=1000, 
-            pseudoinv=True, 
-            normalized=False, 
-            seed = 42,
-            full=True,
-            op = 'FlatFromSync_Unnormalized'
-            ):
-        
-        np.random.seed(seed)
-        if pseudoinv:
-            Sigma = np.linalg.pinv(- self.laplacians[op])
-            X = np.random.multivariate_normal(mean=np.zeros(self.V * self.d_hat), cov=Sigma, size=N).T
-
-        else:
-            P = - self.laplacians[op] + np.eye(self.laplacians[op].shape[0])
-            Sigma = np.linalg.pinv(P)
-
-            X = np.random.randn(self.V * self.d_hat, N)
-            M = np.linalg.cholesky(Sigma)
-            X = M.T @ X
-
-        if normalized:
-            X = X / np.linalg.norm(X, axis=0)
-
-        if not full:
-            X = {
-                v: X[v*self.d_hat:(v + 1)*self.d_hat, :] / np.linalg.norm(X[v*self.d_hat:(v + 1)*self.d_hat, :], axis=0)
-                for v in range(self.V)
-            }
-
-        return X
-    
