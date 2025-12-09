@@ -1,5 +1,4 @@
-"""
-data_utils.py
+""" data_utils.py
 
 Module for "Learning the structure of connection graphs", Di Nino L., D'Acunto G., et al., 2025
 @Author: Leonardo Di Nino
@@ -7,29 +6,36 @@ Date: 2025-04
 """
 
 import numpy as np
-from scipy.spatial import cKDTree
-
-import gstools as gs
-import pyvista as pv
-
 from sklearn.linear_model import OrthogonalMatchingPursuit as OMP
-
-from scipy.sparse.linalg import eigsh
-from scipy.linalg import eigh
-from scipy.linalg import svd
-
-import scipy.sparse as sp
-
 from scipy.linalg import expm
-from scipy.integrate import quad
 
 
 ###########################################
 ########### COMPRESSION METHODS ###########
 ###########################################
 
-def vecOMP(Y, D, T0):
-    
+
+def vec_OMP(
+        Y : np.ndarray, 
+        D : np.ndarray, 
+        T0 : int
+    ) -> float:
+    """ Vectorized Orthogonal Matching Pursuit for non linear compression
+
+    Parameters 
+    ----------
+    Y : np.ndarray
+        Signals to be processed in the shape (num_samples, signal_dimension)
+    D : np.ndarray
+        Representation dictionary
+    T0 : int
+        Sparsity Level
+
+    Returns
+    -------
+    float
+        Relative reconstruction error 
+    """
     batch_size, _ = Y.shape
     dictionary_dim = D.shape[1]
 
@@ -49,7 +55,29 @@ def vecOMP(Y, D, T0):
     
     return np.linalg.norm(Y.T - D @ X.T) ** 2 / np.linalg.norm(Y) ** 2
 
-def LinearApproximation(U, X, M, X_true = None):
+def linear_approximation(
+        U : int, 
+        X : int, 
+        M : int, 
+        X_true : np.ndarray = None):
+    """ Linear compression method
+
+    Parameters 
+    ----------
+    U : np.ndarray
+        Representation dictionary
+    X : np.ndarray
+        Signals to be processed in the shape (num_samples, signal_dimension)
+    M : int
+        Sparsity Level
+    X_true : np.ndarray
+        Ground-truth signals
+
+    Returns
+    -------
+    float
+        Relative reconstruction error 
+    """
     # Compute the transform (coefficients in the U basis)
     alpha = U.T @ X
     
@@ -64,7 +92,27 @@ def LinearApproximation(U, X, M, X_true = None):
 
     return err
 
-def NonlinearApproximation(U, X, M, X_true = None, return_db = False):
+def nonlinear_approximation(U, X, M, X_true = None, return_db = False):
+    """ Nonlinear compression method (top eigen K)
+
+    Parameters 
+    ----------
+    U : np.ndarray
+        Representation dictionary
+    X : np.ndarray
+        Signals to be processed in the shape (num_samples, signal_dimension)
+    M : int
+        Sparsity Level
+    X_true : np.ndarray
+        Ground-truth signals
+    return_db : bool
+        Flag to return the error in decibel
+
+    Returns
+    -------
+    float
+        Relative reconstruction error 
+    """
     # Compute the transform coefficients
     alpha = U.T @ X
     
@@ -94,9 +142,51 @@ def NonlinearApproximation(U, X, M, X_true = None, return_db = False):
     else:
         return err
 
+###################################
+########### DSP METHODS ###########
+###################################
 
-# Some minor utils
-def add_noise_snr(x, snr_db):
+def dct_basis(
+        N : int
+    ) -> np.ndarray:
+    """ Build an N dimensional Discrete Cosine Transform basis
+
+    Parameters
+    ----------
+    N : int
+        Basis dimension
+    
+    Returns
+    -------
+    np.ndarray
+        DCT basis
+    """
+
+    n = np.arange(N)
+    k = n.reshape((N, 1))
+    alpha = np.sqrt(2 / N) * np.ones(N)
+    alpha[0] = np.sqrt(1 / N)
+    C = alpha[:, None] * np.cos(np.pi * k * (n + 0.5) / N)
+    return C
+
+def add_noise_snr(
+        x : np.ndarray, 
+        snr_db : float
+    ) -> np.ndarray:
+    """ Adds noise to a signal accordingly to a given SNR
+
+    Parameters
+    ----------
+    x : np.ndarray
+        Signal to be corrupted with AWGN
+    snr_db : float
+        SNR level
+
+    Returns
+    -------
+    np.ndarray
+        Corrupted signal
+    """
     # Signal power
     P_signal = np.mean(np.abs(x)**2)
     # Required noise power
@@ -105,41 +195,27 @@ def add_noise_snr(x, snr_db):
     noise = np.sqrt(P_noise) * np.random.randn(*x.shape)
     return x + noise
 
-def dct_basis(N):
-    n = np.arange(N)
-    k = n.reshape((N, 1))
-    alpha = np.sqrt(2 / N) * np.ones(N)
-    alpha[0] = np.sqrt(1 / N)
-    C = alpha[:, None] * np.cos(np.pi * k * (n + 0.5) / N)
-    return C
+def low_pass_filter(
+        L : np.ndarray, 
+        k : int
+    ) -> np.ndarray:
+    """ Implements a low pass filter as a FIR filter in a given Connection Laplacian with a O(k**(-2)) spectral response
 
-def random_vector_fields(points, Sigma, M, seed=None):
-    # Create RNG
-    rng = np.random.default_rng(seed)
+    Parameters
+    ----------
+    L : np.ndarray
+        Given Connection Laplacian
+    k : int 
+        Polynomial degree for FIR filter
 
-    # Build mesh
-    mesh = pv.PolyData(points)
+    Returns
+    -------
+    np.ndarray 
+        Estimated FIR filter
+    """
 
-    # Model for spatial correlation
-    model = gs.Gaussian(dim=3, var=1.0, len_scale=0.5)
-    srf = gs.SRF(model, mean=(0, 0, 0), generator="VectorField")
-
-    # Cholesky
-    L = np.linalg.cholesky(Sigma)
-    vec_fields = np.empty((M, points.shape[0], 3))
-
-    for m in range(M):
-        # Use the same RNG for SRF
-        f = srf.mesh(mesh, points="points", seed=rng.integers(1e9))
-        vec_fields[m] = (L @ f).T
-
-    vec_fields = vec_fields.reshape(M, 3 * points.shape[0])
-    return vec_fields.T
-
-
-def low_pass_filter(L, k):
     # Eigen-decomposition
-    Lambda, _ = np.linalg.eigh(- L)
+    Lambda, _ = np.linalg.eigh(L)
 
     # Desired frequency response (O(lambda^(-2)))
     FR = np.ones_like(Lambda)
@@ -158,9 +234,31 @@ def low_pass_filter(L, k):
 
     return PS
 
-def lowspace_projection(L, F, X):
+def lowspace_projection(
+        L : np.ndarray, 
+        F : int, 
+        X : np.ndarray
+    ) -> np.ndarray:
+    """ Projects a signal into the linear supsace spanned by the first F eigenvectors of a connection Laplacian
+
+    Parameters
+    ----------
+
+    L : np.ndarray
+        Given connection Laplacian
+    F : int
+        Cutoff frequency label
+    X : np.ndarray
+        Signals to be projected (nV, num_samples)
+
+    Returns
+    -------
+    np.ndarray
+        Projected signals
+    """
+
     # Eigen-decomposition
-    _, M = np.linalg.eigh(- L )
+    _, M = np.linalg.eigh(L )
 
     # Build the projector
     P = M[:, 0 : F]
@@ -169,45 +267,30 @@ def lowspace_projection(L, F, X):
     # Project the signal on the subspace spanned by the chosen frequency band 
     return Q @ X 
 
-def xi_time_averaged(L, L_hat, T_max=50.0, num_points=1000):
-    """
-    Compute a stable approximation of the time-averaged distance
-    xi(L, L_hat) = lim_{T->∞} (1/T) ∫_0^T ||e^{-t L} - e^{-t L_hat}||_F^2 dt
-    
+def minAICdetector(
+        C : np.ndarray, 
+        M : int, 
+        d : int = 1, 
+        eps : float =1e-12
+    ) -> int:
+    """ Implements a robust detector for the kernel of a covariance matrix as a minimization of the Akaike Information Criterion
+
     Parameters
     ----------
-    L : np.ndarray
-        Laplacian matrix (n x n)
-    L_hat : np.ndarray
-        Laplacian matrix (n x n)
-    T_max : float
-        Maximum integration time to approximate the limit
-    num_points : int
-        Number of time points for numerical integration
-
+    C : np.ndarray
+        Covariance matrix
+    M : int
+        Number of observed signals
+    d : int
+        Local observation dimension
+    eps : float
+        Stability corrector
+    
     Returns
     -------
-    xi_val : float
-        Approximated value of xi(L, L_hat)
+    int
+        Estimated kernel dimension
     """
-    t_values = np.linspace(0, T_max, num_points)
-    dt = t_values[1] - t_values[0]
-
-    integrand = np.zeros_like(t_values)
-    for i, t in enumerate(t_values):
-        diff = expm(-t * L) - expm(-t * L_hat)
-        integrand[i] = np.linalg.norm(diff, 'fro')**2
-
-    xi_val = np.sum(integrand) * dt / T_max
-    return xi_val
-
-def minAICdetector(
-        C, 
-        M, 
-        d=1, 
-        eps=1e-12
-        ):
-
     eigvals = np.sort(np.linalg.eigvalsh(C))[::-1]
     eigvals = np.maximum(eigvals, eps)
     V = len(eigvals)
@@ -232,3 +315,34 @@ def minAICdetector(
     
     # We emit the kernel dimension
     return Kmax - k_AIC
+
+def xi_time_averaged(L, L_hat, T_max=50.0, num_points=1000):
+    """ Compute a stable approximation of the time-averaged diffusion distance
+    
+    Parameters
+    ----------
+    L : np.ndarray
+        Ground truth Laplacian matrix (n x n)
+    L_hat : np.ndarray
+        Estimated Laplacian matrix (n x n)
+    T_max : float
+        Maximum integration time to approximate the limit
+    num_points : int
+        Number of time points for numerical integration
+
+    Returns
+    -------
+    xi_val : float
+        Approximated value of xi(L, L_hat)
+    """
+    t_values = np.linspace(0, T_max, num_points)
+    dt = t_values[1] - t_values[0]
+
+    integrand = np.zeros_like(t_values)
+    for i, t in enumerate(t_values):
+        diff = expm(-t * L) - expm(-t * L_hat)
+        integrand[i] = np.linalg.norm(diff, 'fro')**2
+
+    xi_val = np.sum(integrand) * dt / T_max
+    return xi_val
+
