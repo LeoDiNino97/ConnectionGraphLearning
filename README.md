@@ -8,7 +8,7 @@
 </h5>
 
 > [!TIP]
-> Cellular sheaves are becoming increasingly influential in signal processing and machine learning thanks to their ability to encode local-to-global relationships over networks. However, this expressive power comes with substantial design and learning challenges: specifying a sheaf that satisfies structural desiderata—or inferring it directly from data—can quickly become complex. Building on classical ideas from graph signal processing and focusing on vector bundles, i.e., sheaves whose fibers lie on the orthogonal manifold, we introduce a learning framework that jointly infers both the graph topology and the sheaf geometry. The latter is represented by orthogonal transformations along edges. We assume these edge transformations admit a factorization through local bases at each node, yielding what is known as a flat bundle or consistent connection Laplacian. This structural assumption leads to several advantages: it tightly couples the sheaf Laplacian with the underlying graph spectrum, reduces the number of parameters, and provides a controllable and interpretable model for sheaf learning.
+> Cellular sheaves are becoming increasingly influential in signal processing and machine learning thanks to their ability to encode local-to-global relationships over networks. However, this expressive power comes with substantial design and learning challenges: specifying a sheaf that satisfies structural desiderata—or inferring it directly from data—can quickly become complex. Building on classical ideas from graph signal processing and focusing on vector bundles, i.e., sheaves whose fibers lie on the orthogonal manifold, we introduce a learning framework that jointly infers both the graph topology and the sheaf geometry: the latter is represented by orthogonal transformations along edges. We assume these edge transformations admit a factorization through local bases at each node, yielding what is known as a flat bundle or consistent connection Laplacian. This structural assumption leads to several advantages: it tightly couples the sheaf Laplacian with the underlying graph spectrum, reduces the number of parameters, and provides a controllable and interpretable model for sheaf learning.
 
 ## Citation
 
@@ -31,3 +31,6 @@ If you find this code useful for your research, please consider citing the follo
 ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
 ![NumPy](https://img.shields.io/badge/numpy-%23013243.svg?style=for-the-badge&logo=numpy&logoColor=white)
 ![PyManOpt](https://img.shields.io/badge/pymanopt-yellow?style=for-the-badge&logo=python&logoColor=white&link=[https://github.com/pymanopt/pymanopt])
+![w&b](https://img.shields.io/badge/Weights_&_Biases-FFBE00?style=for-the-badge&logo=WeightsAndBiases&logoColor=white) 
+![](https://img.shields.io/badge/conda-342B029.svg?&style=for-the-badge&logo=anaconda&logoColor=white) 
+![Hydra](https://img.shields.io/badge/Hydra-89CFF0?style=for-the-badge&logo=hyperland&logoColor=white)
