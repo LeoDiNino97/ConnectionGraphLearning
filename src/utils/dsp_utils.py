@@ -16,9 +16,9 @@ from scipy.linalg import expm
 
 
 def vec_OMP(
-        Y : np.ndarray, 
-        D : np.ndarray, 
-        T0 : int
+    Y : np.ndarray, 
+    D : np.ndarray, 
+    T0 : int
     ) -> float:
     """ Vectorized Orthogonal Matching Pursuit for non linear compression
 
@@ -55,11 +55,13 @@ def vec_OMP(
     
     return np.linalg.norm(Y.T - D @ X.T) ** 2 / np.linalg.norm(Y) ** 2
 
+
 def linear_approximation(
-        U : int, 
-        X : int, 
-        M : int, 
-        X_true : np.ndarray = None):
+    U : int, 
+    X : int, 
+    M : int, 
+    X_true : np.ndarray = None
+    ) -> float:
     """ Linear compression method
 
     Parameters 
@@ -92,7 +94,14 @@ def linear_approximation(
 
     return err
 
-def nonlinear_approximation(U, X, M, X_true = None, return_db = False):
+
+def nonlinear_approximation(
+    U : np.ndarray, 
+    X : np.ndarray, 
+    M : int, 
+    X_true : np.ndarray = None, 
+    return_db  : bool = False
+    ) -> np.ndarray:
     """ Nonlinear compression method (top eigen K)
 
     Parameters 
@@ -146,6 +155,7 @@ def nonlinear_approximation(U, X, M, X_true = None, return_db = False):
 ########### DSP METHODS ###########
 ###################################
 
+
 def dct_basis(
         N : int
     ) -> np.ndarray:
@@ -170,8 +180,8 @@ def dct_basis(
     return C
 
 def add_noise_snr(
-        x : np.ndarray, 
-        snr_db : float
+    x : np.ndarray, 
+    snr_db : float
     ) -> np.ndarray:
     """ Adds noise to a signal accordingly to a given SNR
 
@@ -189,15 +199,19 @@ def add_noise_snr(
     """
     # Signal power
     P_signal = np.mean(np.abs(x)**2)
+
     # Required noise power
     P_noise = P_signal / (10**(snr_db / 10))
+
     # Generate noise
     noise = np.sqrt(P_noise) * np.random.randn(*x.shape)
+
     return x + noise
 
+
 def low_pass_filter(
-        L : np.ndarray, 
-        k : int
+    L : np.ndarray, 
+    k : int
     ) -> np.ndarray:
     """ Implements a low pass filter as a FIR filter in a given Connection Laplacian with a O(k**(-2)) spectral response
 
@@ -234,10 +248,11 @@ def low_pass_filter(
 
     return PS
 
+
 def lowspace_projection(
-        L : np.ndarray, 
-        F : int, 
-        X : np.ndarray
+    L : np.ndarray, 
+    F : int, 
+    X : np.ndarray
     ) -> np.ndarray:
     """ Projects a signal into the linear supsace spanned by the first F eigenvectors of a connection Laplacian
 
@@ -267,11 +282,12 @@ def lowspace_projection(
     # Project the signal on the subspace spanned by the chosen frequency band 
     return Q @ X 
 
+
 def minAICdetector(
-        C : np.ndarray, 
-        M : int, 
-        d : int = 1, 
-        eps : float =1e-12
+    C : np.ndarray, 
+    M : int, 
+    d : int = 1, 
+    eps : float =1e-12
     ) -> int:
     """ Implements a robust detector for the kernel of a covariance matrix as a minimization of the Akaike Information Criterion
 
@@ -316,7 +332,13 @@ def minAICdetector(
     # We emit the kernel dimension
     return Kmax - k_AIC
 
-def xi_time_averaged(L, L_hat, T_max=50.0, num_points=1000):
+
+def xi_time_averaged(
+    L : np.ndarray, 
+    L_hat : np.ndarray, 
+    T_max : float = 50.0, 
+    num_points : int = 1000
+    ) -> float:
     """ Compute a stable approximation of the time-averaged diffusion distance
     
     Parameters
@@ -332,7 +354,7 @@ def xi_time_averaged(L, L_hat, T_max=50.0, num_points=1000):
 
     Returns
     -------
-    xi_val : float
+    float
         Approximated value of xi(L, L_hat)
     """
     t_values = np.linspace(0, T_max, num_points)

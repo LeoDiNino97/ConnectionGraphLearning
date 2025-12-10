@@ -26,12 +26,12 @@ class VectorDiffusionMaps:
         Kernel function mode
     """
     def __init__ (
-            self,
-            X,
-            epsilon_geometric,
-            epsilon_PCA,
-            gamma = 0.9,
-            mode = 'Gaussian'
+        self,
+        X,
+        epsilon_geometric,
+        epsilon_PCA,
+        gamma = 0.9,
+        mode = 'Gaussian'
     ) -> None:
         # The dataset of points from a Riemannian manifold and its dimensions
         self.X = X
@@ -54,8 +54,8 @@ class VectorDiffusionMaps:
         self.Alignment()
 
     def Kernel(
-            self,
-            Z : np.ndarray,
+        self,
+        Z : np.ndarray,
     ) -> np.ndarray:
         '''Kernel function applied to the euclidean distances
         
@@ -76,7 +76,7 @@ class VectorDiffusionMaps:
             return (1 - Z ** 2) * supp
     
     def PairWiseDistances(
-            self
+        self
     ) -> np.ndarray:
         '''Compute the matrix of pairwise distances between all points using the Gram trick
 
@@ -90,8 +90,8 @@ class VectorDiffusionMaps:
         return np.sqrt(np.maximum(S[:,None] + S[None,:] - 2 * G, 0))
     
     def LocalPCA(
-            self,
-            v
+        self,
+        v : int
     ) -> None:
         '''Compute the local representation frame of each node as the polar factor of the covariance matrix
 
@@ -134,7 +134,7 @@ class VectorDiffusionMaps:
         return M, d
     
     def LocalPCA_Full(
-            self
+        self
     ):
         '''Applying the LocalPCA routine to all the points in the dataset
         '''
@@ -151,7 +151,7 @@ class VectorDiffusionMaps:
         self.local_basis = {v:self.local_basis[v][:,0:self.d_hat] for v in range(self.V)}
 
     def Alignment(
-            self
+        self
     ):
         '''Compute a geometric graph and a connection laplacian over it via Procrustes alignment
 

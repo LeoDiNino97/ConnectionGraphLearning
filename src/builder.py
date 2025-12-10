@@ -20,7 +20,7 @@ class CochainSample:
     covariance: np.ndarray
     X_GT: np.ndarray
 
-class CG():
+class CG:
     """ This is the super class for connection graphs
 
     Parameters
@@ -40,13 +40,13 @@ class CG():
         Flag for special orthogonal group
     """
     def __init__(
-            self,
-            V : int,
-            d : int,
-            seed : int = 42,
-            kron : bool = False,
-            consistent : bool = True,
-            special : bool = True
+        self,
+        V : int,
+        d : int,
+        seed : int = 42,
+        kron : bool = False,
+        consistent : bool = True,
+        special : bool = True
     ) -> None:
         
         # System dimensions
@@ -69,25 +69,24 @@ class CG():
         self.edges = None
 
     def random_On(
-            self
-        ) -> np.ndarray:
-            """ Generates a random d-dimensional orthogonal matrix
+        self
+    ) -> np.ndarray:
+        """ Generates a random d-dimensional orthogonal matrix
 
-            Returns
-            -------
-            np.ndarray
-                Matrix sampled from O(d) 
-            """
-            Q, _ = np.linalg.qr(np.random.randn(self.d, self.d))
-            if self.special:
-                if np.linalg.det(Q) < 0:
-                    Q[0,:] *= - 1
-            return Q
+        Returns
+        -------
+        np.ndarray
+            Matrix sampled from O(d) 
+        """
+        Q, _ = np.linalg.qr(np.random.randn(self.d, self.d))
+        if self.special:
+            if np.linalg.det(Q) < 0:
+                Q[0,:] *= - 1
+        return Q
     
     def random_connection_graph(
-            self
+        self
     ):
-        
         """ Generates a random d-dimensional connection over the graph
         """
 
@@ -125,16 +124,16 @@ class CG():
         self.CL[np.isclose(self.CL, 0, atol=1e-6)] = 0
         
     def cochains_sampling(
-            self, 
-            N : int = 1000, 
-            CL : np.ndarray = None,
-            pseudoinv : bool = True, 
-            normalized : bool = False, 
-            seed : int = 42,
-            full : bool = True,
-            noisy : bool = False,
-            SNR : float = None
-            ) -> CochainSample:
+        self, 
+        N : int = 1000, 
+        CL : np.ndarray = None,
+        pseudoinv : bool = True, 
+        normalized : bool = False, 
+        seed : int = 42,
+        full : bool = True,
+        noisy : bool = False,
+        SNR : float = None
+    ) -> CochainSample:
         """ Method to sample 0-cochains from N(0, pinv(L) + sigma^2I)
 
         Parameters
@@ -206,11 +205,11 @@ class CG():
             X_GT = X_GT
             )
         
-    def Visualize(
+    def visualize(
         self, 
         L : np.ndarray = None,
         save_dir : str = None
-        ) -> None:
+    ) -> None:
         """ Visualize the network with the given structure or the estimated one
         Parameters
         ----------
@@ -252,15 +251,15 @@ class CG():
             plt.savefig(save_dir, dpi=300, bbox_inches='tight', format='pdf')
 
     def topological_perturbation_sampling(
-            self,
-            p_tau : float,
-            M : int,
-            seed : int = 42,
-            pseudoinv : bool = True, 
-            normalized : bool = False, 
-            full : bool = True,
-            noisy : bool = False,
-            SNR : float = None
+        self,
+        p_tau : float,
+        M : int,
+        seed : int = 42,
+        pseudoinv : bool = True, 
+        normalized : bool = False, 
+        full : bool = True,
+        noisy : bool = False,
+        SNR : float = None
     ) -> CochainSample:
         """ Sampling from a topologically perturbed version of the CG
 
@@ -340,15 +339,15 @@ class CG():
         return X, L_tilde
     
     def geometric_perturbation_sampling(
-            self,
-            p_iota : float,
-            M : int,
-            seed : int = 42,
-            pseudoinv : bool = True, 
-            normalized : bool = False, 
-            full : bool = True,
-            noisy : bool = False,
-            SNR : float = None
+        self,
+        p_iota : float,
+        M : int,
+        seed : int = 42,
+        pseudoinv : bool = True, 
+        normalized : bool = False, 
+        full : bool = True,
+        noisy : bool = False,
+        SNR : float = None
     ) -> CochainSample:
         """ Sampling from a geometrically perturbed version of the CG
 
@@ -398,7 +397,7 @@ class CG():
         return X, CL_tilde
     
 class ERCG(CG):
-    ''' This class implement a ER Connection Graph with a consistent connection graph built on top of it enforcing a certain number of connected components
+    """ This class implement a ER Connection Graph with a consistent connection graph built on top of it enforcing a certain number of connected components
 
     Parameters
     ----------
@@ -418,20 +417,21 @@ class ERCG(CG):
         Flag for consistency
     special : bool
         Flag for special orthogonal group
-    '''
+    """
     
     def __init__(
-            self, 
-            V : int,
-            d : int, 
-            k : int,
-            w_LB : float = 0.2,
-            w_UB : float = 3,
-            seed = 42,
-            p = None,
-            kron = False,
-            consistent = True, 
-            special = True):
+        self, 
+        V : int,
+        d : int, 
+        k : int,
+        w_LB : float = 0.2,
+        w_UB : float = 3,
+        seed = 42,
+        p = None,
+        kron = False,
+        consistent = True, 
+        special = True
+    ) -> None:
         super().__init__(V, d, seed, kron, consistent, special)
 
         self.k = k  # Number of connected components
@@ -484,7 +484,16 @@ class ERCG(CG):
         self.L = self.laplacian()
         self.random_connection_graph()
     
-    def weights(self):
+    def weights(
+        self
+    ) -> np.ndarray:
+        """ Samples edge weights matrix
+        
+        Returns
+        -------
+        np.ndarray
+            Weighted Adjacency matrix
+        """
         W = np.zeros_like(self.A, dtype=float)
         for edge in self.edges:
             w = np.random.uniform(low=0.2, high=3)
@@ -492,11 +501,20 @@ class ERCG(CG):
             W[edge[1], edge[0]] = w
         return W
 
-    def laplacian(self):
+    def laplacian(
+        self
+    ) -> np.ndarray:
+        """ Returns a valid weighted laplacian 
+        
+        Returns
+        -------
+        np.ndarray
+            Combinatorial laplacian
+        """
         return np.diag(np.sum(self.W, axis=0)) - self.W
 
 class RBFCG(CG):
-    ''' This class implements a Random Geometric Graph with a consistent connection graph built on top of it
+    """ This class implements a Random Geometric Graph with a consistent connection graph built on top of it
 
     Parameters
     ----------
@@ -516,18 +534,18 @@ class RBFCG(CG):
         Flag for consistency
     special : bool
         Flag for special orthogonal group
-    '''
+    """
     def __init__(
-            self, 
-            V : int,
-            d : int, 
-            sigma : float = 0.5,
-            cutoff : float = 0.75,
-            seed : int = 42,
-            kron : bool = False,
-            consistent : bool = True, 
-            special : bool = True
-        ) -> None:
+        self, 
+        V : int,
+        d : int, 
+        sigma : float = 0.5,
+        cutoff : float = 0.75,
+        seed : int = 42,
+        kron : bool = False,
+        consistent : bool = True, 
+        special : bool = True
+    ) -> None:
         super().__init__(V, d, seed, kron, consistent, special)
 
         def generate_geometric_gaussian_weighted():
@@ -593,18 +611,18 @@ class SBMCG(CG):
         Flag for special orthogonal group
     """
     def __init__(
-            self, 
-            V,
-            d : int, 
-            seed : int,
-            k : int,
-            p_k : np.ndarray,
-            p_in : float,
-            p_out : float,
-            kron : bool = False,
-            consistent : bool = True, 
-            special : bool = True
-        ) -> None:
+        self, 
+        V,
+        d : int, 
+        seed : int,
+        k : int,
+        p_k : np.ndarray,
+        p_in : float,
+        p_out : float,
+        kron : bool = False,
+        consistent : bool = True, 
+        special : bool = True
+    ) -> None:
         super().__init__(V, d, seed, kron, consistent, special)
         
         # Stochastic block model parameters
@@ -634,14 +652,20 @@ class SBMCG(CG):
         self.random_connection_graph()
 
     def block_assignment(self):
+        """ Assigns node to communities
+        """
         self.B = {node: np.random.choice(self.k, p=self.p_k)
                   for node in range(self.V)}
 
     def block_transition(self):
+        """ Defines the transition probability of 
+        """
         self.C = np.ones((self.k, self.k)) * self.p_out
         self.C[range(self.k), range(self.k)] = self.p_in
 
     def edge_generation(self):
+        """ Edge sampling routing
+        """
         for i in range(self.V):
             for j in range(i + 1, self.V):
                 U = self.B[i]
@@ -652,6 +676,8 @@ class SBMCG(CG):
                 self.A[j, i] = edge
 
     def graph_building(self):
+        """ Stochastic Block Model setup method calling all routines
+        """
         self.block_assignment()
         self.block_transition()
         self.edge_generation()
@@ -680,16 +706,16 @@ class GridCG(CG):
     """
 
     def __init__(
-            self, 
-            side : int,
-            d : int, 
-            w_LB : float = 0.2,
-            w_UB : float = 3,
-            seed : int = 42,
-            kron : bool =False,
-            consistent : bool =True, 
-            special : bool =True
-        ) -> None:
+        self, 
+        side : int,
+        d : int, 
+        w_LB : float = 0.2,
+        w_UB : float = 3,
+        seed : int = 42,
+        kron : bool =False,
+        consistent : bool =True, 
+        special : bool =True
+    ) -> None:
         super().__init__(V = side ** 2, d = d, seed = seed, kron = kron, consitent = consistent, special = special)
         
         self.w_LB = w_LB
@@ -709,7 +735,9 @@ class GridCG(CG):
 
         self.random_connection_graph()
     
-    def Weights(self) -> np.ndarray:
+    def weights(
+        self
+    ) -> np.ndarray:
         """ Sample edge weights from a uniform distribution
 
         Returns
@@ -724,7 +752,9 @@ class GridCG(CG):
             W[edge[1], edge[0]] = w
         return W
 
-    def Laplacian(self):
+    def laplacian(
+        self
+    ) -> np.ndarray:
         """ Builds the combinatorial laplacian from the adjacency
 
         Returns

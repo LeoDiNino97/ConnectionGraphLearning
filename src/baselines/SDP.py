@@ -35,15 +35,15 @@ class SheafConnectionLaplacian:
     """
 
     def __init__(
-            self, 
-            V : int, 
-            d : int, 
-            alpha : float = 1.0, 
-            beta : float = 1.0, 
-            gamma : float = 1.0,
-            epsilon : float = 1e-8, 
-            L0 : np.ndarray = None
-        ) -> None:
+        self, 
+        V : int, 
+        d : int, 
+        alpha : float = 1.0, 
+        beta : float = 1.0, 
+        gamma : float = 1.0,
+        epsilon : float = 1e-8, 
+        L0 : np.ndarray = None
+    ) -> None:
         
         # Constructive parameter
         self.V = V
@@ -107,12 +107,12 @@ class SheafConnectionLaplacian:
         self.problem = cp.Problem(objective, constraints)
 
     def solve(
-            self, 
-            C : np.ndarray, 
-            verbose : int = 0, 
-            solver : str = "MOSEK", 
-            warm_start : bool = False
-        ):
+        self, 
+        C : np.ndarray, 
+        verbose : int = 0, 
+        solver : str = "MOSEK", 
+        warm_start : bool = False
+    ) -> np.ndarray:
         """Method to solve the istantiated problem
 
         Parameters

@@ -56,7 +56,10 @@ class SmoothSheafDiffusion:
         self.LocalSparsifying(self.best_alpha)
         self.Alignment()
     
-    def CrossValidation(self, k_folds = 5):
+    def CrossValidation(
+        self, 
+        k_folds : int = 5
+    ) -> float:
         """The method performs the cross validation for the hyperparameter regulating the local sparsification
         
         Parameters
@@ -118,7 +121,11 @@ class SmoothSheafDiffusion:
 
         return best_params['alpha']
 
-    def LocalSparsifying(self, alpha, X = None):
+    def LocalSparsifying(
+        self, 
+        alpha : float, 
+        X : np.ndarray = None
+    ):
         """Performs local sparsification on the given basis (DCT)       
 
         Parameters
@@ -167,7 +174,9 @@ class SmoothSheafDiffusion:
             self.local_codes[v] = ProxGradDescent(X_v, alpha)
             self.local_bases[v] = self.basis[:, np.abs(self.local_codes[v][:,0]) > 1e-8]
 
-    def Alignment(self):
+    def Alignment(
+        self
+    ):
         """ Performs pairwise alignment based on Procrustes solution
         """
         self.maps = {
@@ -197,7 +206,9 @@ class SmoothSheafDiffusion:
 
                 self.dists[(i,j)] = np.linalg.norm(F_i @ self.basis @ S_i - self.basis @ S_j)
 
-    def LaplacianBuilder(self):
+    def LaplacianBuilder(
+        self
+    ) -> np.ndarray:
         """ Build a Sheaf Laplacian according to the prior on the number of edges and the post-alingment distances
 
         Returns
