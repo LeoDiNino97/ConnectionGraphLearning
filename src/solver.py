@@ -436,6 +436,16 @@ class SCGL:
                     noisy = self.noisy
                 )
 
+                # ---- W&B logging block ----
+                wandb.log({
+                    "loss": loss[t],
+                    "iteration": t,
+                    "beta": self.beta,
+                    "max_w_update": float(np.max(np.abs(w - w_hat))),
+                }, step=t
+                )
+                # ---------------------------
+
                 if t > 0 :
 
                     # Patience mechanism on loss plateaus
@@ -457,8 +467,40 @@ class SCGL:
     ): 
         """ Single learning call
         """
-        args = self.SCGL_initialization(X)
-        O, w, Z, _, _, loss_log = self.SCGL_main_loop(args[0], args[1], args[2], args[3], args[4], args[5], args[6])
+
+        # Start wandb run
+        wandb.init(
+            project="SCGL",
+            name=f"SCGL_run_V{self.V}_d{self.d}",
+            config={
+                "V": self.V,
+                "d": self.d,
+                "k": self.k,
+                "alpha": self.alpha,
+                "beta_initial": self.beta,
+                "gamma": self.gamma,
+                "proximal_mode": self.proximal_mode,
+                "update_frames": self.update_frames,
+                "SOC": self.SOC,
+                "rel_tol": self.rel_tol,
+                "abs_tol": self.abs_tol,
+                "loss_tol": self.loss_tol,
+                "patience": self.patience,
+                "MAX_ITER": self.MAX_ITER,
+            }
+        )
+
+        init_args = self.SCGL_initialization(X)
+        O, w, Z, _, _, loss_log = self.SCGL_main_loop(
+            init_args[0], 
+            init_args[1], 
+            init_args[2], 
+            init_args[3], 
+            init_args[4], 
+            init_args[5], 
+            init_args[6]
+        )
+        
         wandb.finish()
 
         return O, w, Z, loss_log
