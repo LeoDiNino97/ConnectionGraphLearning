@@ -78,6 +78,8 @@ class SCGL:
         Maximum number of iterations
     verbose : bool
         Flag for verbosity
+    WANDB_monitor : bool
+        Flag to start a WANDB session to monitor the performances
     """
     def __init__(
         self,
@@ -114,7 +116,8 @@ class SCGL:
         loss_tol : float,
         patience : int,
         MAX_ITER : int,
-        verbose : bool
+        verbose : bool,
+        WANDB_monitor : bool
     ): 
         # System dimension
         self.V = V
@@ -167,9 +170,9 @@ class SCGL:
         self.patience = patience 
         self.MAX_ITER = MAX_ITER
 
-        # Verbosity
+        # Monitoring
         self.verbose = verbose
-
+        self.WANDB_monitor = WANDB_monitor
     
     def SCGL_initialization(
         self,
@@ -435,16 +438,16 @@ class SCGL:
                     alpha = self.alpha, 
                     noisy = self.noisy
                 )
-
-                # ---- W&B logging block ----
-                wandb.log({
-                    "loss": loss[t],
-                    "iteration": t,
-                    "beta": self.beta,
-                    "max_w_update": float(np.max(np.abs(w - w_hat))),
-                }, step=t
-                )
-                # ---------------------------
+                if self.WANDB_monitor:
+                    # ---- W&B logging block ----
+                    wandb.log({
+                        "loss": loss[t],
+                        "iteration": t,
+                        "beta": self.beta,
+                        "max_w_update": float(np.max(np.abs(w - w_hat))),
+                    }, step=t
+                    )
+                    # ---------------------------
 
                 if t > 0 :
 
@@ -467,28 +470,28 @@ class SCGL:
     ): 
         """ Single learning call
         """
-
-        # Start wandb run
-        wandb.init(
-            project="SCGL",
-            name=f"SCGL_run_V{self.V}_d{self.d}",
-            config={
-                "V": self.V,
-                "d": self.d,
-                "k": self.k,
-                "alpha": self.alpha,
-                "beta_initial": self.beta,
-                "gamma": self.gamma,
-                "proximal_mode": self.proximal_mode,
-                "update_frames": self.update_frames,
-                "SOC": self.SOC,
-                "rel_tol": self.rel_tol,
-                "abs_tol": self.abs_tol,
-                "loss_tol": self.loss_tol,
-                "patience": self.patience,
-                "MAX_ITER": self.MAX_ITER,
-            }
-        )
+        if self.WANDB_monitor:
+            # Start wandb run
+            wandb.init(
+                project="SCGL",
+                name=f"SCGL_run_V{self.V}_d{self.d}",
+                config={
+                    "V": self.V,
+                    "d": self.d,
+                    "k": self.k,
+                    "alpha": self.alpha,
+                    "beta_initial": self.beta,
+                    "gamma": self.gamma,
+                    "proximal_mode": self.proximal_mode,
+                    "update_frames": self.update_frames,
+                    "SOC": self.SOC,
+                    "rel_tol": self.rel_tol,
+                    "abs_tol": self.abs_tol,
+                    "loss_tol": self.loss_tol,
+                    "patience": self.patience,
+                    "MAX_ITER": self.MAX_ITER,
+                }
+            )
 
         init_args = self.SCGL_initialization(X)
         O, w, Z, _, _, loss_log = self.SCGL_main_loop(
@@ -501,6 +504,7 @@ class SCGL:
             init_args[6]
         )
         
-        wandb.finish()
+        if self.WANDB_monitor:
+            wandb.finish()
 
         return O, w, Z, loss_log

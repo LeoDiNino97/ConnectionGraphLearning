@@ -1,0 +1,39 @@
+dimensions:
+  V: 30
+  d: 2
+  seed: 42
+  ratio: 10
+  noisy: False
+
+graphs:
+  ER:
+    k: 1
+  RBFCG:
+    sigma: 0.5
+    cutoff: 0.75
+  SBM:
+    p_k: 
+      - 0.4
+      - 0.3 
+      - 0.3
+    p_in: 0.7
+    p_out: 0.05
+
+solvers:
+  SCGL:
+    alpha: 0.0025
+    beta: 60
+    initialization_mode: 'QP'
+    update_frames: True
+    SOC: True
+    rho: 1000
+    fix_beta: True
+    beta_min: 10
+    beta_max: 3000
+    beta_factor: 5e-2
+
+solver: SCGL
+graph: ER
+
+
+    
