@@ -8,7 +8,6 @@ Date: 2025-04
 from dataclasses import dataclass
 
 import numpy as np
-import random
 import networkx as nx
 from matplotlib import pyplot as plt
 
@@ -55,11 +54,9 @@ class CG:
 
         # Flags and seeds
         self.seed = seed
-
-        # Fix all randomness globally
         np.random.seed(self.seed)
-        random.seed(self.seed)
 
+        # CG properties
         self.kron = kron
         self.consistent = consistent
         self.special = special
@@ -556,12 +553,11 @@ class RBFCG(CG):
             nx.Graph
                 Istantiation from networkx Graph object
             """
-            rng = np.random.default_rng(seed)
 
-            # 1. Sample coordinates in [0,1]^(d+1)
-            X = rng.random((self.V, self.d + 1))
+            # Sample coordinates in [0,1]^(d+1)
+            X = np.random.rand(self.V, self.d + 1)
 
-            # 2. Pairwise squared distances (vectorized)
+            # Pairwise squared distances (vectorized)
             diff = X[:, None, :] - X[None, :, :]
             dist2 = np.sum(diff**2, axis=2)
 
@@ -632,14 +628,6 @@ class SBMCG(CG):
         self.p_out = p_out                     # Inter cluster wiring probability
 
         self.A = np.zeros((V,V))
-
-        # Fix all randomness globally
-        np.random.seed(self.seed)
-        random.seed(self.seed)
-
-        self.kron = kron
-        self.consistent = consistent
-        self.special = special
         
         # Build graph
         self.graph_building()

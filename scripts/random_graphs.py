@@ -75,14 +75,38 @@ def main(cfg: DictConfig) -> None:
     # Solvers istantiation and laplacian learning
     solver = cfg.solver
     match solver:
+
+        case 'KRON':
+            solver_ = SCGL(
+                V = V,
+                d = d,
+                k = np.sum(np.isclose(np.linalg.eigvals(graph_.L),0)),
+                alpha = cfg.solvers.SCGL.alpha,
+                beta = cfg.solvers.SCGL.beta,
+                initialization_mode = 'ID-QP',
+                proximal_mode = cfg.solvers.SCGL.proximal_mode,
+                update_frames = False,
+                fix_beta = cfg.solvers.SCGL.fix_beta,
+                beta_min = cfg.solvers.SCGL.beta_min,
+                beta_max = cfg.solvers.SCGL.beta_max,
+                beta_factor = cfg.solvers.SCGL.beta_factor,
+            )
+
+            sols = solver_.fit(X.X)
+            w, O = sols["SCGL"]['w'], sols["SCGL"]['O']
+
+            L_hat_inits = None
+            L_hat = O.T @ LKron(w, V, d) @ O
+
         case 'SCGL':
             solver_ = SCGL(
                 V = V,
                 d = d,
-                k = cfg.solvers.SCGL.k,
+                k = np.sum(np.isclose(np.linalg.eigvals(graph_.L),0)),
                 alpha = cfg.solvers.SCGL.alpha,
                 beta = cfg.solvers.SCGL.beta,
                 initialization_mode = cfg.solvers.SCGL.initialization_mode,
+                proximal_mode = cfg.solvers.SCGL.proximal_mode,
                 update_frames = cfg.solvers.SCGL.update_frames,
                 SOC = cfg.solvers.SCGL.SOC,
                 rho = cfg.solvers.SCGL.rho,
@@ -91,7 +115,13 @@ def main(cfg: DictConfig) -> None:
                 beta_max = cfg.solvers.SCGL.beta_max,
                 beta_factor = cfg.solvers.SCGL.beta_factor,
             )
-            O, w, _, _ = solver_.fit(X.X)
+
+            sols = solver_.fit(X.X)
+
+            w_init, O_init = sols["Initialization"]['w'], sols["Initialization"]['O']
+            w, O = sols["SCGL"]['w'], sols["SCGL"]['O']
+
+            L_hat_inits = O_init.T @ LKron(w_init, V, d) @ O_init
             L_hat = O.T @ LKron(w, V, d) @ O
 
         case 'SPD':
@@ -101,11 +131,13 @@ def main(cfg: DictConfig) -> None:
             )
 
             # Initializing the SPD solver and validating parameter alpha via cross validation
-            solver_.L0 = graph_.CL
             solver_.CrossValidation(X.X, verbose = 0)
+
+            L_hat_inits = None
             L_hat = solver_.Solve(X.covariance, verbose = 0)
 
         case 'SLGP':
+            L_hat_inits = None
             L_hat = SmoothSheafDiffusion(X.X, V, d, len(graph.edges)).LaplacianBuilder()
 
     uuid : str = f"V{V}_d{d}_seed{seed}_ratio{ratio}_{solver}_{graph}"
@@ -138,6 +170,30 @@ def main(cfg: DictConfig) -> None:
         'Recall': recall_,
         'Empirical Total Variation': empirical_TV
     }).to_parquet(RESULTS_PATH / f'{uuid}.parquet')
+
+    if L_hat_inits is not None:
+        uuid : str = f"V{V}_d{d}_seed{seed}_ratio{ratio}_initSCOP_{graph}"
+        
+        # Extracting sparsity pattern from Laplacian estimation 
+        w_hat_bin = L_spy(L_hat_inits, d)
+        
+        f1_score_ = f1_score(w_true_bin, w_hat_bin)
+        precision_ = precision_score(w_true_bin, w_hat_bin)
+        recall_ = recall_score(w_true_bin, w_hat_bin)
+        empirical_TV = np.trace(L_hat_inits @ X_test.covariance) 
+
+        pd.DataFrame({
+            'V': V,
+            'd': d, 
+            'Ratio': ratio,
+            'Seed': seed,
+            'Solver': "SCOP",
+            'Graph': graph,
+            'F1': f1_score_,
+            'Precision': precision_,
+            'Recall': recall_,
+            'Empirical Total Variation': empirical_TV
+        }).to_parquet(RESULTS_PATH / f'{uuid}.parquet')
 
 if __name__ == '__main__':
     main()

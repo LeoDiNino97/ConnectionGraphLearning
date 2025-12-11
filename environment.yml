@@ -24,6 +24,7 @@ dependencies:
   - tqdm
   - wandb
   - hydra
+  - omegaconf
   - pip:
     - picos
     - pymanopt

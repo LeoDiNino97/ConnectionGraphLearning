@@ -254,7 +254,7 @@ class SCGL:
             V = self.V, 
             k = self.k, 
             d = self.d
-            )
+        )
         
         return w, U, S, X, Z, O, lambda_
     
@@ -468,7 +468,7 @@ class SCGL:
         self,
         X : np.ndarray
     ): 
-        """ Single learning call
+        """ Learning method
         """
         if self.WANDB_monitor:
             # Start wandb run
@@ -493,18 +493,29 @@ class SCGL:
                 }
             )
 
-        init_args = self.SCGL_initialization(X)
+        w_init, U_init, S_init, X_init, Z_init, O_init = self.SCGL_initialization(X)
         O, w, Z, _, _, loss_log = self.SCGL_main_loop(
-            init_args[0], 
-            init_args[1], 
-            init_args[2], 
-            init_args[3], 
-            init_args[4], 
-            init_args[5], 
-            init_args[6]
+            w = w_init,
+            U = U_init,
+            S = S_init,
+            X = X_init,
+            Z = Z_init,
+            O = O_init
         )
         
         if self.WANDB_monitor:
             wandb.finish()
 
-        return O, w, Z, loss_log
+        return {
+            "Initialization": {
+                "w": w_init,
+                "O": O_init,
+                "Z": Z_init,
+            },
+            "SCGL": {
+                "w": w,
+                "O": O,
+                "Z": Z,
+            },
+            "Loss-log": loss_log
+        }
