@@ -10,6 +10,30 @@
 > [!TIP]
 > Cellular sheaves are becoming increasingly influential in signal processing and machine learning thanks to their ability to encode local-to-global relationships over networks. However, this expressive power comes with substantial design and learning challenges: specifying a sheaf that satisfies structural desiderata—or inferring it directly from data—can quickly become complex. Building on classical ideas from graph signal processing and focusing on vector bundles, i.e., sheaves whose fibers lie on the orthogonal manifold, we introduce a learning framework that jointly infers both the graph topology and the sheaf geometry: the latter is represented by orthogonal transformations along edges. We assume these edge transformations admit a factorization through local bases at each node, yielding what is known as a flat bundle or consistent connection Laplacian. This structural assumption leads to several advantages: it tightly couples the sheaf Laplacian with the underlying graph spectrum, reduces the number of parameters, and provides a controllable and interpretable model for sheaf learning.
 
+## Dependencies  
+### Using `conda` package manager
+
+It is highly recommended to create a Conda environment before installing dependencies.  
+In a terminal, navigate to the root folder and run:
+
+```bash
+conda env create -f environment.yml
+```
+
+Activate the environment:
+```bash
+conda activate <env_name>
+```
+You're ready to go! 🚀
+
+## Simulations 
+This section provides the necessary commands to run the simulations required for the experiments. The commands execute different training scripts with specific configurations. 
+
+### Inference of random graphs
+```bash
+python scripts/random_graphs.py -m dimensions.seed='range(0, 840, 42)' dimensions.ratio=1.5,5,15 solvers.SCGL.alpha=0.0025 solvers.SCGL.beta=30 graph=ER,RBF,SBM solver=SCGL,SPD,SLGP
+python scripts/random_graphs_readout.py 
+```
 ## Citation
 
 If you find this code useful for your research, please consider citing the following paper:
