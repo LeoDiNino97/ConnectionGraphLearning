@@ -22,7 +22,7 @@ conda env create -f environment.yml
 
 Activate the environment:
 ```bash
-conda activate <env_name>
+conda activate SCGL
 ```
 You're ready to go! 🚀
 
