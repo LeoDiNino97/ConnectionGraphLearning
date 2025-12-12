@@ -3,6 +3,9 @@
 <h5 align="center">
      
 [![arXiv](https://img.shields.io/badge/Arxiv-2512.05657-b31b1b.svg?logo=arXiv)]([https://arxiv.org/abs/2512.05657](https://arxiv.org/pdf/2510.11245))
+[![License](https://img.shields.io/badge/Code%20License-MIT-yellow)](https://github.com/LeoDiNino97/ConnectionGraphLearning/blob/main/LICENSE.txt)
+
+
  <br>
 
 </h5>
