@@ -29,7 +29,7 @@ You're ready to go! 🚀
 ## Simulations 
 This section provides the necessary commands to run the simulations required for the experiments. The commands execute different training scripts with specific configurations. 
 
-### Inference of random graphs
+### Inference of random graphs
 ```bash
 python scripts/random_graphs.py -m dimensions.seed='range(0, 840, 42)' dimensions.ratio=1.5,5,15 solvers.SCGL.alpha=0.0025 solvers.SCGL.beta=30 graph=ER,RBF,SBM solver=SCGL,SPD,SLGP
 python scripts/random_graphs_readout.py 
