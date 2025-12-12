@@ -472,7 +472,7 @@ class ERCG(CG):
             G = nx.disjoint_union_all(components)
             return G
 
-        self.G = generate_Kcomponent_ER(self.V, self.k, p = self.p)
+        self.G = generate_Kcomponent_ER()
 
         self.A = nx.adjacency_matrix(self.G).toarray()
         self.edges = list(self.G.edges)

@@ -31,12 +31,21 @@ group_cols = ["V", "d", "Ratio", "Solver", "Graph"]
 # Define metric columns to average across seeds
 metric_cols = ["F1", "Precision", "Recall", "Empirical Total Variation"]
 
-# Aggregate
+# Aggregation
 df_out = (
     df_all.groupby(group_cols)[metric_cols]
-    .mean()
-    .reset_index()
-).to_parquet(RESULTS_PATH / 'random_graphs.parquet')
+    .agg(['mean', 'std'])
+)
+
+# Flatten column index
+df_out.columns = [
+    f"{col}_{stat}" for col, stat in df_out.columns
+]
+
+df_out = df_out.reset_index()
+
+df_out.to_parquet(SAVE_DIR / "random_graphs.parquet")
+
 
 
 

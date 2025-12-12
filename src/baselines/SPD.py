@@ -232,7 +232,7 @@ class SheafConnectionLaplacian:
 
                 try:
                     # Fit on training covariance
-                    L_hat = self.Solve(C_train, verbose=verbose, solver=solver, warm_start=True)
+                    L_hat = self.solve(C_train, verbose=verbose, solver=solver, warm_start=True)
 
                 except Exception as e:
                     if verbose:

@@ -1,4 +1,4 @@
-name: cs
+name: SCGL
 channels:
   - conda-forge
   - defaults
@@ -23,9 +23,10 @@ dependencies:
   - cvxopt
   - tqdm
   - wandb
-  - hydra
-  - omegaconf
   - pip:
+    - mosek
+    - hydra-core
+    - omegaconf
     - picos
     - pymanopt
     - gstools

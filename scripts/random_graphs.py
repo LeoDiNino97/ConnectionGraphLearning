@@ -1,5 +1,8 @@
+""" Script for experiment 2 in the journal paper """
+
 import sys
 from pathlib import Path
+from datetime import datetime
 
 sys.path.append(str(Path(sys.path[0]).parent))
 
@@ -13,12 +16,13 @@ from src.baselines.SLGP import SmoothSheafDiffusion
 from src.builder import *
 from src.solver import *
 
+
 @hydra.main(
-    config_path = '../configs',
-    config_name = 'random_graphs',
-    version_base = '1.3',
+    config_path="../configs",  
+    config_name="random_graphs",
+    version_base="1.3"
 )
-def main(cfg: DictConfig) -> None:
+def main(cfg: DictConfig):
     """Main experimental loop"""
 
     # Define some usefull paths
@@ -31,7 +35,7 @@ def main(cfg: DictConfig) -> None:
     # Read simulations specific variables
     V : int = cfg.dimensions.V
     d : int = cfg.dimensions.d
-    ratio : float = cfg.dimensions.float
+    ratio : float = cfg.dimensions.ratio
     noisy : bool = cfg.dimensions.noisy
     seed : int = cfg.dimensions.seed
 
@@ -131,23 +135,23 @@ def main(cfg: DictConfig) -> None:
             )
 
             # Initializing the SPD solver and validating parameter alpha via cross validation
-            solver_.CrossValidation(X.X, verbose = 0)
+            solver_.cross_validation(X.X, verbose = 0)
 
             L_hat_inits = None
-            L_hat = solver_.Solve(X.covariance, verbose = 0)
+            L_hat = solver_.solve(X.covariance, verbose = 0)
 
         case 'SLGP':
             L_hat_inits = None
-            L_hat = SmoothSheafDiffusion(X.X, V, d, len(graph.edges)).LaplacianBuilder()
+            L_hat = SmoothSheafDiffusion(X.X, V, d, len(graph_.edges)).LaplacianBuilder()
 
-    uuid : str = f"V{V}_d{d}_seed{seed}_ratio{ratio}_{solver}_{graph}"
+    uuid : str = f"V{V}_d{d}_seed{seed}_ratio{ratio}_{solver}_{graph}_{datetime.today().strftime("%Y%m%d")}"
 
     # Collecting metrics
     # Test signals for total variation
-    X_test = graph_.CochainsSampling(int(d * V * ratio),)
+    X_test = graph_.cochains_sampling(int(d * V * ratio),)
 
     # Ground truth
-    w_true = L_inv(graph.L)
+    w_true = L_inv(graph_.L)
     w_true_bin = (w_true > 0).astype(int)
     
     # Extracting sparsity pattern from Laplacian estimation 
@@ -159,20 +163,20 @@ def main(cfg: DictConfig) -> None:
     empirical_TV = np.trace(L_hat @ X_test.covariance) 
 
     pd.DataFrame({
-        'V': V,
-        'd': d, 
-        'Ratio': ratio,
-        'Seed': seed,
-        'Solver': solver,
-        'Graph': graph,
-        'F1': f1_score_,
-        'Precision': precision_,
-        'Recall': recall_,
-        'Empirical Total Variation': empirical_TV
+        'V': [V],
+        'd': [d], 
+        'Ratio': [ratio],
+        'Seed': [seed],
+        'Solver': [solver],
+        'Graph': [graph],
+        'F1': [f1_score_],
+        'Precision': [precision_],
+        'Recall': [recall_],
+        'Empirical Total Variation': [empirical_TV]
     }).to_parquet(RESULTS_PATH / f'{uuid}.parquet')
 
     if L_hat_inits is not None:
-        uuid : str = f"V{V}_d{d}_seed{seed}_ratio{ratio}_initSCOP_{graph}"
+        uuid : str = f"V{V}_d{d}_seed{seed}_ratio{ratio}_initSCOP_{graph}_{datetime.today().strftime("%Y%m%d")}"
         
         # Extracting sparsity pattern from Laplacian estimation 
         w_hat_bin = L_spy(L_hat_inits, d)
@@ -181,18 +185,17 @@ def main(cfg: DictConfig) -> None:
         precision_ = precision_score(w_true_bin, w_hat_bin)
         recall_ = recall_score(w_true_bin, w_hat_bin)
         empirical_TV = np.trace(L_hat_inits @ X_test.covariance) 
-
         pd.DataFrame({
-            'V': V,
-            'd': d, 
-            'Ratio': ratio,
-            'Seed': seed,
+            'V': [V],
+            'd': [d], 
+            'Ratio': [ratio],
+            'Seed': [seed],
             'Solver': "SCOP",
-            'Graph': graph,
-            'F1': f1_score_,
-            'Precision': precision_,
-            'Recall': recall_,
-            'Empirical Total Variation': empirical_TV
+            'Graph': [graph],
+            'F1': [f1_score_],
+            'Precision': [precision_],
+            'Recall': [recall_],
+            'Empirical Total Variation': [empirical_TV]
         }).to_parquet(RESULTS_PATH / f'{uuid}.parquet')
 
 if __name__ == '__main__':

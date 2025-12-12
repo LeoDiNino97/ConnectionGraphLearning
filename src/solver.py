@@ -1,8 +1,15 @@
+"""solver.py
+
+Module for "Structured Learning of Consistent Connection Laplacians with Spectral Constraints", Di Nino L., D'Acunto G., et al., 2025
+@Author: Leonardo Di Nino
+Date: 2025-04
+"""
+
 import numpy as np 
 import wandb 
 from tqdm import tqdm
 
-from utils.solver_utils import * 
+from src.utils.solver_utils import * 
 
 class SCGL:
     """ Implementation of the proposed Structured Connection Graph Learning method
@@ -88,36 +95,35 @@ class SCGL:
         k : int, 
         alpha : float,
         beta : float, 
-        gamma : float,
-        eps : float,
-        initialization_mode : str,
-        initialization_seed : int,
-        max_init_its : int,
-        w_inits : np.ndarray,
-        O_inits : np.ndarray,
-        max_w_its : int,
-        proximal_mode : str,
-        exact_linesearch : bool,
-        update_frames : bool,
-        max_O_its : int,
-        SOC : bool,
-        rho : float,
-        R_solver : str,
-        bases : dict,
-        noisy : bool,
-        c1 : float,
-        c2 : float,
-        beta_factor : float,
-        fix_beta : bool,
-        beta_min : float,
-        beta_max : float,
-        rel_tol : float,
-        abs_tol : float,
-        loss_tol : float,
-        patience : int,
-        MAX_ITER : int,
-        verbose : bool,
-        WANDB_monitor : bool
+        eps : float = 1e-8,
+        initialization_mode : str = 'QP',
+        initialization_seed : int = 42,
+        max_init_its : int = 1000,
+        w_inits : np.ndarray = None,
+        O_inits : np.ndarray = None,
+        max_w_its : int = 1,
+        proximal_mode : str = 'Proximal-ID',
+        exact_linesearch : bool = False,
+        update_frames : bool = True,
+        max_O_its : int = 100,
+        SOC : bool = True,
+        rho : float = 100,
+        R_solver : str = 'RGD',
+        bases : dict = None,
+        noisy : bool = False,
+        c1 : float = 1e-5,
+        c2 : float = 1e4,
+        beta_factor : float = 5e-2,
+        fix_beta : bool = False,
+        beta_min : float = 10,
+        beta_max : float = 3000,
+        rel_tol : float = 1e-4,
+        abs_tol : float = 1e-4,
+        loss_tol : float = 1e-4,
+        patience : int = 1000,
+        MAX_ITER : int = 20000,
+        verbose : bool = 0,
+        WANDB_monitor : bool = True
     ): 
         # System dimension
         self.V = V
@@ -127,7 +133,6 @@ class SCGL:
         # Hyperparameter
         self.alpha = alpha
         self.beta = beta
-        self.gamma = gamma
         self.eps = eps
 
         # Initialization setup
@@ -196,7 +201,6 @@ class SCGL:
 
         if self.w_inits is None or self.O_inits is None:
             init_args = Initialization(
-                M = X.shape[1],
                 S = S, 
                 d = self.d, 
                 V = self.V,
@@ -204,7 +208,6 @@ class SCGL:
                 beta_0 = self.k, 
                 mode = self.initialization_mode,
                 MAX_ITER = self.max_init_its, 
-                verbosity = self.verbose,
                 bases = self.bases,
                 seed = self.initialization_seed
             )
@@ -404,6 +407,8 @@ class SCGL:
 
                 # Primal residuals on w
                 w_err = np.abs(w - w_hat)
+                O_err = np.abs(O - O_hat)
+
                 converged_w = np.all(w_err <= 0.5 * self.rel_tol * (w + w_hat)) or np.all(w_err <= self.abs_tol)
                 converged *= converged_w
 
@@ -444,7 +449,8 @@ class SCGL:
                         "loss": loss[t],
                         "iteration": t,
                         "beta": self.beta,
-                        "max_w_update": float(np.max(np.abs(w - w_hat))),
+                        "w_update_norm": np.linalg.norm(w_err),
+                        "O_update_norm": np.linalg.norm(O_err),
                     }, step=t
                     )
                     # ---------------------------
@@ -481,7 +487,6 @@ class SCGL:
                     "k": self.k,
                     "alpha": self.alpha,
                     "beta_initial": self.beta,
-                    "gamma": self.gamma,
                     "proximal_mode": self.proximal_mode,
                     "update_frames": self.update_frames,
                     "SOC": self.SOC,
@@ -493,14 +498,15 @@ class SCGL:
                 }
             )
 
-        w_init, U_init, S_init, X_init, Z_init, O_init = self.SCGL_initialization(X)
+        w_init, U_init, S_init, X_init, Z_init, O_init, lambda_init = self.SCGL_initialization(X)
         O, w, Z, _, _, loss_log = self.SCGL_main_loop(
             w = w_init,
             U = U_init,
             S = S_init,
             X = X_init,
             Z = Z_init,
-            O = O_init
+            O = O_init,
+            lambda_ = lambda_init
         )
         
         if self.WANDB_monitor:

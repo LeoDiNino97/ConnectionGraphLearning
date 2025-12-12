@@ -7,11 +7,8 @@ Date: 2025-04
 
 
 import numpy as np 
-import cvxpy as cp
-
 from scipy.optimize import minimize
 from tqdm import tqdm
-
 import autograd.numpy as anp
 import pymanopt
 from pymanopt import Problem
@@ -353,6 +350,7 @@ def Update_w(
         w = w_hat
         
     return w
+
 
 def Update_O_RG(
     O : np.ndarray,
@@ -751,6 +749,7 @@ def Update_Lambda(
         
     return lambda_hat
 
+
 def Initialization(
     S : np.ndarray, 
     d : int, 
@@ -1031,6 +1030,7 @@ def Initialization(
             else:
                 return w, O
 
+
 def loss_(
     V : int,
     d : int, 
@@ -1097,39 +1097,3 @@ def loss_(
             + 0.5 * beta * np.linalg.norm(LKron(w, V, d) - U @ np.kron(np.diag(lambda_), np.eye(d)) @ U.T) ** 2
             + alpha * np.linalg.norm(w,ord=1)
         )
-    
-# def LKron_inv(  
-#     M,
-#     O,
-#     d
-#     ):
-#     '''
-#     Inverse of the linear operator L(w), mapping back any consistent connection graph Laplacian to the vector of edge weights or making least-square
-#     estimate for input matrices not possessing consistency requisite.
-
-#     Args:
-#         M (np.ndarray): Input Laplacian-like matrix of dimension V x V.
-#         O (np.ndarray): Block-diagonal matrix containing on each v-th block the orthonormal basis associated to the v-th node of the graph. 
-#         d (int): Dimensions of the stalks over the nodes.
-    
-#     Returns:
-#         w (np.ndarray): Edges weights vector of dimension V(V-1)/2.
-#     '''
-
-#     N = int(M.shape[1] // d)
-#     k = (N * (N - 1)) // 2
-#     w = np.empty(k)
-#     l = 0
-
-#     # Recover the Kronecker graph laplacian
-#     LK = O @ M @ O.T
-
-#     # Populate the vector from the upper triangular part of the input matrix taking into account how the maps contribute to the Laplacian structure
-#     for i in range(N - 1):
-#         for j in range(i + 1, N):
-#             w[l] = - (1/d) * np.trace(LK[i * d : (i + 1) * d, j * d : (j + 1) * d])
-#             l += 1
-
-#     # Check for non-negativity
-#     w[w < 0] = 0
-#     return w
