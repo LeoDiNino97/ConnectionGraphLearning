@@ -64,7 +64,7 @@ def main(cfg: DictConfig):
                 V = V,
                 d = d,
                 seed = seed,
-                k = len(cfg.graphs.SBD.p_k),
+                k = len(cfg.graphs.SBM.p_k),
                 p_k = cfg.graphs.SBM.p_k,
                 p_in = cfg.graphs.SBM.p_in,
                 p_out = cfg.graphs.SBM.p_out,
