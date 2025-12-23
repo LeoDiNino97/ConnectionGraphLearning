@@ -37,6 +37,12 @@ This section provides the necessary commands to run the simulations required for
 python scripts/random_graphs.py -m dimensions.seed='range(0, 840, 42)' dimensions.ratio=1.5,5,15 solvers.SCGL.alpha=0.0025 solvers.SCGL.beta=30 graph=ER,RBF,SBM solver=SCGL,SPD,SLGP
 python scripts/random_graphs_readout.py 
 ```
+
+### Inference from noisy signals
+```bash
+python scripts/noisy_inference.py -m signals.seed='range(0,420,42)' signals.SNR=0,10,20,30
+python scripts/noisy_inference_readout.py 
+```
 ## Citation
 
 If you find this code useful for your research, please consider citing the following paper:
