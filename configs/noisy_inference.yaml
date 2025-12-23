@@ -1,9 +1,13 @@
-dimensions:
+dimensions: 
   V: 30
   d: 2
   seed: 42
-  ratio: 10
-  noisy: False
+
+signals:
+  ratio: 5
+  noisy: True
+  seed: 42
+  SNR: 0
 
 graphs:
   ER:
@@ -18,7 +22,7 @@ graphs:
       - 0.3
     p_in: 0.7
     p_out: 0.05
-
+  
 solvers:
   SCGL:
     alpha: 0.0025
@@ -35,6 +39,3 @@ solvers:
 
 solver: SCGL
 graph: ER
-
-
-    

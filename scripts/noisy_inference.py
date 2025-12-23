@@ -19,7 +19,7 @@ from src.solver import *
 
 @hydra.main(
     config_path="../configs",  
-    config_name="random_graphs",
+    config_name="noisy_inference",
     version_base="1.3"
 )
 def main(cfg: DictConfig):
@@ -35,9 +35,12 @@ def main(cfg: DictConfig):
     # Read simulations specific variables
     V : int = cfg.dimensions.V
     d : int = cfg.dimensions.d
-    ratio : float = cfg.dimensions.ratio
-    noisy : bool = cfg.dimensions.noisy
-    seed : int = cfg.dimensions.seed
+    graph_seed : int = cfg.dimensions.seed
+
+    ratio : float = cfg.signals.ratio
+    noisy : bool = cfg.signals.noisy
+    signals_seed : int = cfg.signals.seed
+    SNR : float = cfg.signals.SNR
 
     # Graph istantiation 
     graph = cfg.graph
@@ -47,7 +50,7 @@ def main(cfg: DictConfig):
                 V = V,
                 d = d,
                 k = cfg.graphs.ER.k,
-                seed = seed
+                seed = graph_seed
             )
 
         case 'RBF':
@@ -56,14 +59,14 @@ def main(cfg: DictConfig):
                 d = d,
                 sigma = cfg.graphs.RBF.sigma,
                 cutoff = cfg.graphs.RBF.cutoff,
-                seed = seed
+                seed = graph_seed
             )
         
         case 'SBM':
             graph_ = SBMCG(
                 V = V,
                 d = d,
-                seed = seed,
+                seed = graph_seed,
                 k = len(cfg.graphs.SBM.p_k),
                 p_k = cfg.graphs.SBM.p_k,
                 p_in = cfg.graphs.SBM.p_in,
@@ -72,8 +75,9 @@ def main(cfg: DictConfig):
     
     X = graph_.cochains_sampling(
         N = int(V * d * ratio),
-        seed = seed,
-        noisy = noisy
+        seed = signals_seed,
+        noisy = noisy,
+        SNR = SNR
     )
 
     # Solvers istantiation and laplacian learning
@@ -90,6 +94,7 @@ def main(cfg: DictConfig):
                 initialization_mode = 'ID-QP',
                 proximal_mode = cfg.solvers.SCGL.proximal_mode,
                 update_frames = False,
+                noisy = cfg.signals.noisy,
                 fix_beta = cfg.solvers.SCGL.fix_beta,
                 beta_min = cfg.solvers.SCGL.beta_min,
                 beta_max = cfg.solvers.SCGL.beta_max,
@@ -116,6 +121,7 @@ def main(cfg: DictConfig):
                 update_frames = cfg.solvers.SCGL.update_frames,
                 SOC = cfg.solvers.SCGL.SOC,
                 rho = cfg.solvers.SCGL.rho,
+                noisy = cfg.signals.noisy,
                 fix_beta = cfg.solvers.SCGL.fix_beta,
                 beta_min = cfg.solvers.SCGL.beta_min,
                 beta_max = cfg.solvers.SCGL.beta_max,
@@ -151,7 +157,7 @@ def main(cfg: DictConfig):
             L_hat = SmoothSheafDiffusion(X.X, V, d, len(graph_.edges)).LaplacianBuilder()
             w_hat_bin = L_spy(L_hat, d)
 
-    uuid : str = f"V{V}_d{d}_seed{seed}_ratio{ratio}_{solver}_{graph}_{datetime.today().strftime("%Y%m%d")}"
+    uuid : str = f"V{V}_d{d}_graphseed{graph_seed}_signalseed{signals_seed}_SNR{SNR}_ratio{ratio}_{solver}_{graph}_{datetime.today().strftime("%Y%m%d")}"
 
     # Collecting metrics
     # Test signals for total variation
@@ -170,7 +176,9 @@ def main(cfg: DictConfig):
         'V': [V],
         'd': [d], 
         'Ratio': [ratio],
-        'Seed': [seed],
+        'Graph Seed': [graph_seed],
+        'Signal Seed': [signals_seed],
+        'SNR': [SNR],
         'Solver': [solver],
         'Graph': [graph],
         'F1': [f1_score_],
@@ -180,7 +188,7 @@ def main(cfg: DictConfig):
     }).to_parquet(RESULTS_PATH / f'{uuid}.parquet')
 
     if L_hat_inits is not None:
-        uuid : str = f"V{V}_d{d}_seed{seed}_ratio{ratio}_initSCOP_{graph}_{datetime.today().strftime("%Y%m%d")}"
+        uuid : str = f"V{V}_d{d}_graphseed{graph_seed}_signalseed{signals_seed}_SNR{SNR}_ratio{ratio}_initSCOP_{graph}_{datetime.today().strftime("%Y%m%d")}"
         
         f1_score_init = f1_score(w_true_bin, w_init_bin)
         precision_init = precision_score(w_true_bin, w_init_bin)
@@ -190,7 +198,8 @@ def main(cfg: DictConfig):
             'V': [V],
             'd': [d], 
             'Ratio': [ratio],
-            'Seed': [seed],
+            'Graph Seed': [graph_seed],
+            'Signal Seed': [signals_seed],
             'Solver': "SCOP",
             'Graph': [graph],
             'F1': [f1_score_init],

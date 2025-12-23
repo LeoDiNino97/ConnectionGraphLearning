@@ -8,6 +8,7 @@ Date: 2025-04
 
 import numpy as np 
 from scipy.optimize import minimize
+from scipy.linalg import block_diag
 from tqdm import tqdm
 import autograd.numpy as anp
 import pymanopt
@@ -322,8 +323,6 @@ def Update_w(
     
     for _ in range(its):
         # The objective function in w is rewritten as a quadratic function in LKron(w) and linear in w
-        # S_hat = O @ (U @ (np.kron(np.diag(lambda_), np.eye(d))) @ U.T - (1 / beta) * S ) @ O.T 
-
         # Gradients computation 
         grad = LKron_adjoint(LKron(w, V, d) - S_hat, d) 
         
@@ -565,18 +564,30 @@ def Update_O_SOC(
         np.ndarray
             Retracted block matrix
         """
-        P = np.zeros_like(M)
-        for v in range(V):
-            M_vv = M[v * d : (v + 1) * d , v * d : (v + 1) * d]
-            U, _, Vt = np.linalg.svd(M_vv)
-            P_vv_temp = U @ Vt
-            if np.linalg.det(P_vv_temp) < 0:
-                Sigma_tilde = np.ones(P_vv_temp.shape[0])
-                Sigma_tilde[0] = np.linalg.det(P_vv_temp)
-                P_vv = U @ Sigma_tilde @ Vt
-                P_vv_temp = P_vv
-            P[v * d : (v + 1) * d , v * d : (v + 1) * d] = P_vv_temp
-        return P
+        # Perform the block retraction batch-wise
+        P = M.reshape(V,d,V,d)
+        P = P[np.arange(V), :, np.arange(V), :]
+        U, _, Vt = np.linalg.svd(P)
+
+        P_temp = U @ Vt 
+        dets = np.linalg.det(P_temp)
+        mask = dets < 0
+        if np.any(mask):
+            U[mask, :, -1] *= -1
+            P_temp[mask] = U[mask] @ Vt[mask]
+        return block_diag(*list(P_temp))
+    
+        # for v in range(V):
+        #     M_vv = M[v * d : (v + 1) * d , v * d : (v + 1) * d]
+        #     U, _, Vt = np.linalg.svd(M_vv)
+        #     P_vv_temp = U @ Vt
+        #     if np.linalg.det(P_vv_temp) < 0:
+        #         Sigma_tilde = np.ones(P_vv_temp.shape[0])
+        #         Sigma_tilde[0] = np.linalg.det(P_vv_temp)
+        #         P_vv = U @ Sigma_tilde @ Vt
+        #         P_vv_temp = P_vv
+        #     P[v * d : (v + 1) * d , v * d : (v + 1) * d] = P_vv_temp
+        # return P
 
     # Initialize support variables
     B = np.zeros_like(O)
@@ -643,10 +654,10 @@ def Update_U(
 
     # The solution is given directly by the eigenvectors of the estimated connection laplacian
     LC_hat = LKron(w, V, d)
-    _, Z = np.linalg.eigh(LC_hat)
+    _, U_hat = np.linalg.eigh(LC_hat)
 
     # Restriction to St(dV, d(V-k))
-    U_hat = Z[:, k * d : ]
+    U_hat = U_hat[:, k * d : ]
     return U_hat
 
 
@@ -754,7 +765,7 @@ def Initialization(
     S : np.ndarray, 
     d : int, 
     V : int,
-    mode : str = 'ID',
+    mode : str = 'QP',
     noisy : bool = False,
     beta_0 : int = None,
     loss_tracker : bool = False,
@@ -993,7 +1004,8 @@ def Initialization(
                 args=(O), 
                 jac=w_grad, 
                 method='L-BFGS-B', 
-                bounds=bounds).x
+                bounds=bounds
+            ).x
 
             # Optimization in O 
             O_hat = O_Update(
@@ -1001,7 +1013,8 @@ def Initialization(
                 w, 
                 V, 
                 d,
-                bases = bases,)
+                bases = bases,
+            )
 
             # Convergence check
             loss[iteration] = np.linalg.norm(S_pinv - O.T @ LKron(w, V, d) @ O) ** 2
@@ -1012,16 +1025,14 @@ def Initialization(
             converged_w = np.all(w_err <= 0.5 * reltol * (w + w_hat)) or np.all(w_err <= abstol)
             converged_O = np.all(O_err <= 0.5 * reltol * (O + O_hat)) or np.all(O_err <= abstol)
 
+            w = w_hat
+            O = O_hat
+
             if converged_w and converged_O:
-                w = w_hat
-                O = O_hat
 
                 print(f'Initialization done in {iteration} iterations')
                 break
             
-            w = w_hat
-            O = O_hat
-
         if loss_tracker:
             return w, O, loss[:iteration]
         else:

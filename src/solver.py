@@ -27,8 +27,6 @@ class SCGL:
         Hyperparameter regulating sparsity
     beta : float 
         Hyperparameter regulating consistency
-    gamma : float
-        Hyperparameter regulating reconstruction error
     eps : float
         Numerical stability control
     initialization_mode : str
@@ -102,13 +100,13 @@ class SCGL:
         w_inits : np.ndarray = None,
         O_inits : np.ndarray = None,
         max_w_its : int = 1,
-        proximal_mode : str = 'Proximal-ID',
+        proximal_mode : str = 'Proximal-L1',
         exact_linesearch : bool = False,
         update_frames : bool = True,
         max_O_its : int = 100,
         SOC : bool = True,
         rho : float = 100,
-        R_solver : str = 'RGD',
+        R_solver : str = 'RCG',
         bases : dict = None,
         noisy : bool = False,
         c1 : float = 1e-5,
@@ -259,13 +257,12 @@ class SCGL:
             d = self.d
         )
         
-        return w, U, S, X, Z, O, lambda_
+        return w, U, X, Z, O, lambda_
     
     def SCGL_main_loop(
         self,
         w : np.ndarray,
         U : np.ndarray,
-        S : np.ndarray,
         X : np.ndarray,
         Z : np.ndarray,
         O : np.ndarray,
@@ -333,8 +330,6 @@ class SCGL:
                             w = w_hat, 
                             V = self.V, 
                             d = self.d, 
-                            lambda_ = lambda_, 
-                            beta = self.beta, 
                             O_init = True,
                             max_its = self.max_O_its,
                             bases = self.bases,
@@ -408,6 +403,7 @@ class SCGL:
                 # Primal residuals on w
                 w_err = np.abs(w - w_hat)
                 O_err = np.abs(O - O_hat)
+                lambda_err = np.abs(lambda_ - lambda_hat)
 
                 converged_w = np.all(w_err <= 0.5 * self.rel_tol * (w + w_hat)) or np.all(w_err <= self.abs_tol)
                 converged *= converged_w
@@ -443,6 +439,7 @@ class SCGL:
                     alpha = self.alpha, 
                     noisy = self.noisy
                 )
+                
                 if self.WANDB_monitor:
                     # ---- W&B logging block ----
                     wandb.log({
@@ -451,6 +448,7 @@ class SCGL:
                         "beta": self.beta,
                         "w_update_norm": np.linalg.norm(w_err),
                         "O_update_norm": np.linalg.norm(O_err),
+                        "lambda_update_norm": np.linalg.norm(lambda_err)
                     }, step=t
                     )
                     # ---------------------------
@@ -480,7 +478,7 @@ class SCGL:
             # Start wandb run
             wandb.init(
                 project="SCGL",
-                name=f"SCGL_run_V{self.V}_d{self.d}",
+                name=f"SCGL_run_V{self.V}_d{self.d}_seed{self.initialization_seed}",
                 config={
                     "V": self.V,
                     "d": self.d,
@@ -498,11 +496,11 @@ class SCGL:
                 }
             )
 
-        w_init, U_init, S_init, X_init, Z_init, O_init, lambda_init = self.SCGL_initialization(X)
+        w_init, U_init, X_init, Z_init, O_init, lambda_init = self.SCGL_initialization(X)
+        
         O, w, Z, _, _, loss_log = self.SCGL_main_loop(
             w = w_init,
             U = U_init,
-            S = S_init,
             X = X_init,
             Z = Z_init,
             O = O_init,
