@@ -4,7 +4,7 @@ dimensions:
   seed: 42
 
 signals:
-  ratio: 5
+  ratio: 10
   noisy: True
   seed: 42
   SNR: 0
@@ -14,7 +14,7 @@ graphs:
     k: 1
   RBF:
     sigma: 0.5
-    cutoff: 0.75
+    cutoff: 0.5
   SBM:
     p_k: 
       - 0.4
@@ -29,10 +29,11 @@ solvers:
     beta: 60
     initialization_mode: 'QP'
     proximal_mode: 'Proximal-L1'
+    max_w_its: 1
     update_frames: True
     SOC: True
     rho: 1000
-    fix_beta: True
+    fix_beta: False
     beta_min: 10
     beta_max: 300
     beta_factor: 5e-2

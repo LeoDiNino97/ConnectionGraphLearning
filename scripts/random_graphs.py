@@ -150,6 +150,10 @@ def main(cfg: DictConfig):
             L_hat_inits = None
             L_hat = SmoothSheafDiffusion(X.X, V, d, len(graph_.edges)).LaplacianBuilder()
             w_hat_bin = L_spy(L_hat, d)
+        
+        case 'CONTROL':
+            L_hat = graph_.CL
+            w_hat_bin = L_spy(L_hat, d)
 
     uuid : str = f"V{V}_d{d}_seed{seed}_ratio{ratio}_{solver}_{graph}_{datetime.today().strftime("%Y%m%d")}"
 

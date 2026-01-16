@@ -257,9 +257,9 @@ def Update_Z(
     """
     
     LL_hat = O.T @ LKron(w = w, V = V, d = d) @ O
-    F = np.linalg.inv(np.eye(V * d) + LL_hat / gamma)
+    F = np.linalg.inv(gamma * np.eye(V * d) + LL_hat)
 
-    return F @ X
+    return F @ (gamma * X)
 
 
 def Update_w(
@@ -276,7 +276,7 @@ def Update_w(
     its : int = 1,
     eps : float = 1e-8,
     proximal_mode : str = 'Proximal-L1',
-    exact_linesearch : bool= False
+    exact_linesearch : bool = False
     ) -> np.ndarray:  
     """ Optimization step in edge weights w in the learning problem in the form of a projected gradient descent coming from a MM approach. 
 
@@ -315,7 +315,7 @@ def Update_w(
 
     assert proximal_mode in ['Proximal-L1','Proximal-LOG','ReweightedL1'], 'Please chose a valide proximal modality'
 
-    S_hat = U @ (np.kron(np.diag(lambda_), np.eye(d))) @ U.T - (1 / (beta * gamma)) * O @ S @ O.T
+    S_hat = U @ (np.kron(np.diag(lambda_), np.eye(d))) @ U.T - (1 / (beta)) * O @ S @ O.T
 
     # Subroutine for positive l1 norm proximal projection
     def PositiveProxL1(x, th):
@@ -336,8 +336,7 @@ def Update_w(
             mu = 2 * V * d
 
         if proximal_mode == 'Proximal-L1':
-
-            w_hat = PositiveProxL1(w - (1 / mu) * grad, (alpha / beta) * 1 / (w + 1e-1))
+            w_hat = PositiveProxL1(w - (1 / mu) * grad, (alpha / beta) * 1 / (w + 1e-10))
 
         elif proximal_mode == 'Proximal-LOG':
             grad += (alpha / beta) * 1 / (w + eps)
@@ -712,7 +711,7 @@ def Update_Lambda(
     for i in range(q):
         T = np.trace(M[i * d : (i + 1) * d, i * d : (i + 1) * d])
         D[i] = T
-        lambda_hat[i] = 1 / (2 * d) * (T + np.sqrt(T ** 2 + (4 * d ** 2) / (gamma ** 2 * beta)))
+        lambda_hat[i] = 1 / (2 * d) * (T + np.sqrt(T ** 2 + (4 * d ** 2) / beta))
 
     counter = 0
 
@@ -1055,7 +1054,8 @@ def loss_(
     gamma : float,
     beta : float,
     alpha : float, 
-    noisy : bool
+    noisy : bool,
+    proximal_mode : str
 ) -> float:
     """ Computes the loss function value given the current state of the algorithm 
 
@@ -1087,24 +1087,26 @@ def loss_(
         Hyperparameter regulating sparsity
     noisy : bool
         Flag for noise in learning
-    
+    proximal_mode : str
+        Proximal strategy for sparsification
     Returns
     -------
     float
         Loss function value
     """
+    reg = alpha * np.linalg.norm(w,ord=1) if proximal_mode == 'Proximal-L1' else np.sum(alpha * np.log(w + 1e-8))
     if noisy:
         return (
             gamma * np.linalg.norm(X - Z) ** 2 / X.shape[1]
             - d * np.sum(np.log(lambda_))
             + np.trace(S @ O.T @ LKron(w, V, d) @ O) 
             + 0.5 * beta * np.linalg.norm(LKron(w, V, d) - U @ np.kron(np.diag(lambda_), np.eye(d)) @ U.T) ** 2
-            + alpha * np.linalg.norm(w,ord=1)
+            + reg
         )
     else:
         return (
             - d * np.sum(np.log(lambda_))
             + np.trace(S @ O.T @ LKron(w, V, d) @ O) 
             + 0.5 * beta * np.linalg.norm(LKron(w, V, d) - U @ np.kron(np.diag(lambda_), np.eye(d)) @ U.T) ** 2
-            + alpha * np.linalg.norm(w,ord=1)
+            + reg
         )

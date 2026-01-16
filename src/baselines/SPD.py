@@ -39,7 +39,7 @@ class SheafConnectionLaplacian:
         V : int, 
         d : int, 
         alpha : float = 1.0, 
-        beta : float = 1.0, 
+        beta : float = 0.0, 
         gamma : float = 1.0,
         epsilon : float = 1e-8, 
         L0 : np.ndarray = None
@@ -90,7 +90,7 @@ class SheafConnectionLaplacian:
         constraints = [self.rho >= cp.sqrt(self.d) * cp.norm(self.F, axis =1)]  
 
         # Volume-preserving constraint
-        constraints += [cp.sum(self.rho) == self.gamma]
+        # constraints += [cp.sum(self.rho) == self.gamma]
 
         # Likelihood term
         likelihood = self.rho @ self.C_diag_param + 2 * cp.sum(cp.multiply(self.F, self.C_off_param))
@@ -111,7 +111,8 @@ class SheafConnectionLaplacian:
         C : np.ndarray, 
         verbose : int = 0, 
         solver : str = "MOSEK", 
-        warm_start : bool = False
+        warm_start : bool = False,
+        cv : bool = False
     ) -> np.ndarray:
         """Method to solve the istantiated problem
 
@@ -163,12 +164,16 @@ class SheafConnectionLaplacian:
         L_hat = np.block(blocks)
         L_hat[np.isclose(L_hat, 0, atol=1e-7)] = 0.0
 
-        if self.L0 is None:
+        if cv:
             return L_hat
         else:
-            # L0 is given to minimize the distance from it via a proper scaling
-            scale = (np.trace(L_hat.T @ self.L0) / (np.linalg.norm(L_hat,'fro')**2 + 1e-12))
-            return scale * L_hat
+            if self.L0 is None:
+                return L_hat
+            else:
+                # L0 is given to minimize the distance from it via a proper scaling
+                scale = (np.trace(L_hat.T @ self.L0) / (np.linalg.norm(L_hat,'fro')**2 + 1e-12))
+
+                return scale * L_hat
     
     def cross_validation(
         self,
@@ -232,7 +237,7 @@ class SheafConnectionLaplacian:
 
                 try:
                     # Fit on training covariance
-                    L_hat = self.solve(C_train, verbose=verbose, solver=solver, warm_start=True)
+                    L_hat = self.solve(C_train, verbose=verbose, solver=solver, warm_start=True, cv=True)
 
                 except Exception as e:
                     if verbose:

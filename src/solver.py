@@ -288,6 +288,10 @@ class SCGL:
             return O, w, None,
         else:
             for t in tqdm(range(self.MAX_ITER)):
+                # Adaptive multiplier for noise
+                # sigma_2_hat = np.mean(np.linalg.eigvalsh(S)[0 : self.d * self.k])
+                # self.gamma = 1 / (2 * sigma_2_hat)
+
                 # Update Z
                 if self.noisy:
                     Z_hat = Update_Z(
@@ -437,9 +441,10 @@ class SCGL:
                     gamma = self.gamma,
                     beta = self.beta,
                     alpha = self.alpha, 
-                    noisy = self.noisy
+                    noisy = self.noisy,
+                    proximal_mode = self.proximal_mode
                 )
-                
+
                 if self.WANDB_monitor:
                     # ---- W&B logging block ----
                     wandb.log({

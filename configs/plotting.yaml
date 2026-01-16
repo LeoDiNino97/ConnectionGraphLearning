@@ -1,0 +1,75 @@
+style:
+  seaborn:
+    style: whitegrid
+
+  matplotlib:
+    rcParams:
+      font.family: serif
+      font.serif: Times New Roman
+      mathtext.fontset: stix
+      font.size: 18
+      axes.titlesize: 18
+      axes.labelsize: 18
+      xtick.labelsize: 16
+      ytick.labelsize: 16
+      legend.fontsize: 14
+
+colors:
+  palette:
+    - "#0072BD"
+    - "#D95319"
+    - "#7E2F8E"
+    - "#EDB120"
+    - "#77AC30"
+    - "#4DBEEE"
+    - "#A2142F"
+
+markers:
+  filled:
+    - "o"
+    - "<"
+    - "s"
+    - "^"
+    - ">"
+    - "P"
+    - "D"
+
+figure:
+  size:
+    width: 8
+    height: 6
+  dpi: 300
+
+lines:
+  linewidth: 2.4
+  markersize: 12
+
+axes:
+  spine:
+    visible: true
+    linewidth: 1.2
+    color: black
+
+  labels:
+    xlabel: Tolerance
+    ylabel: Sparsity
+
+grid:
+  enabled: true
+  axis: y
+  which: minor
+  color: gray
+  linewidth: 0.5
+  alpha: 0.3
+
+legend:
+  enabled: true
+  fontsize: 14
+  frameon: true
+  location: lower left
+  handlelength: 2.2
+  handletextpad: 0.7
+  columnspacing: 1.0
+
+layout:
+  tight: true

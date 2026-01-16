@@ -9,7 +9,10 @@ from dataclasses import dataclass
 
 import numpy as np
 import networkx as nx
+from scipy.spatial import cKDTree
 from matplotlib import pyplot as plt
+import gstools as gs
+import pyvista as pv
 
 @dataclass
 class CochainSample:
@@ -751,3 +754,275 @@ class GridCG(CG):
             Combinatorial laplacian matrix
         """
         return np.diag(np.sum(self.W, axis=0)) - self.W
+
+class FibonacciSphereGraph:
+
+    """  Generates a Fibonacci-lattice sphere and constructs a k-NN graph over it with graph alignment and VDM approximation
+
+
+    Parameters
+    ----------
+
+    V : int
+        Number of points
+    k_neighbors : int
+        Number of neighbors in the k-NN graph
+    kernel_mode : string
+        
+    """
+    def __init__(
+        self, 
+        V : int = 200, 
+        k_neighbors : int = 6,
+        kernel_mode : str = 'Gaussian'
+    ) -> None:
+        
+        self.V = V
+        self.k_neighbors = k_neighbors
+
+        self.kernel_mode = kernel_mode
+
+        self.d = 3
+        self.d_hat = 2
+
+        self._generate_points()
+        self._build_knn_graph()
+        self._graph_alingment()
+        self._connection_laplacian()
+    
+    def _generate_points(self):
+        ''' Generate a Fibonacci lattice on the unit sphere
+        '''
+        
+        indices = np.arange(0, self.V, dtype=float) + 0.5
+        phi = np.arccos(1 - 2 * indices/self.V)
+        theta = np.pi * (1 + 5**0.5) * indices
+        x = np.sin(phi) * np.cos(theta)
+        y = np.sin(phi) * np.sin(theta)
+        z = np.cos(phi)
+        self.points = np.vstack((x, y, z)).T
+
+    def _build_knn_graph(self):
+        ''' Construct a k-NN graph from the Fibonacci lattice
+        '''
+        tree = cKDTree(self.points)
+        edge_set = set()
+        edges = []
+
+        for i, point in enumerate(self.points):
+            _, neighbors = tree.query(point, k=self.k_neighbors + 1)
+            for j in neighbors[1:]:  # skip self
+                if (i, j) not in edge_set and (j, i) not in edge_set:
+                    edges.append((i, j))
+                    edge_set.add((i, j))
+
+        n_edges = len(edges)
+        B = np.zeros((self.V, n_edges), dtype=float)
+
+        for edge_id, (i, j) in enumerate(edges):
+            B[i, edge_id] = 1
+            B[j, edge_id] = -1
+
+        self.edges = edges
+        self.B = B
+        self.L = B @ B.T
+        self.A = self.L - np.diag(np.diag(self.L))
+    
+    def _graph_alingment(self):
+        ''' Implement the graph Local PCA as in Barbero F., "Sheaf Neural Networks with Connection Laplacians"
+        '''
+        self.local_bases = {v: None for v in range(self.V)}
+
+        for v in range(self.V):
+            neighbors_index = np.where(self.A[v,:] != 0)[0]
+            X_v = self.points[neighbors_index, ]
+            U, _, _ = np.linalg.svd(X_v.T)
+            self.local_bases[v] = U[:, 0 : 2]   
+
+    def _connection_laplacian(
+            self
+    ):
+        ''' Compute a geometric graph and a connection laplacian over it via Procrustes alignment
+        '''
+
+        # Compute the Procrustes transformation and some accessory stuff
+        self.maps = {}
+        self.degree_matrices = {}
+        self.ndegree_matrices = {}
+
+        self.D = np.kron(np.diag(np.diag(self.L)), np.eye(self.d_hat))
+        self.DN = np.sqrt(np.linalg.inv(self.D))
+        self.O = np.zeros((self.V * self.d_hat, self.V * self.d_hat))
+
+        for i in range(self.V):
+
+            for j in range(i + 1, self.V):
+                if self.L[i, j] != 0:
+
+                    O_ij_tilde = self.local_bases[i].T @ self.local_bases[j]
+                    U, _, Vt = np.linalg.svd(O_ij_tilde)
+                    O_ij = U @ Vt
+
+                    self.maps[(i,j)] = O_ij
+
+        # Computing the normalized connection Laplacian and the unnormalized connection Laplacian 
+        self.S = np.zeros((self.V * self.d_hat, self.V * self.d_hat))
+    
+        for edge in self.maps.keys():
+            i = edge[0]
+            j = edge[1]
+
+            self.S[i * self.d_hat : ( i + 1 ) * self.d_hat, j * self.d_hat : ( j + 1 ) * self.d_hat] = self.maps[edge]
+            self.S[j * self.d_hat : ( j + 1 ) * self.d_hat, i * self.d_hat : ( i + 1 ) * self.d_hat] = self.maps[edge].T
+
+        self.CLN = self.DN @ ( self.D - self.S ) @ self.DN                                    # Normalized connection Laplacian
+        self.CLUN = self.D - self.S                                                           # Unnormalized connection Laplacian
+
+        self.laplacians = {
+            'Normalized': self.CLN,
+            'Unnormalized': self.CLUN,
+        }
+
+    def _proj_to_O(self, M):
+        ''' Project a d_hat x d_hat matrix to O(d_hat) via SVD
+        '''
+        U, _, Vt = np.linalg.svd(M, full_matrices=False)
+        R = U @ Vt
+
+        return R
+    
+    def random_tangent_bundle_signals(
+            self, 
+            Sigma : np.ndarray = None, 
+            M : int = 1000, 
+            seed : int = 42
+        ) -> None:
+
+        if Sigma is None:
+            Sigma = np.eye(self.d)
+
+        # Create RNG
+        rng = np.random.default_rng(seed)
+
+        # Build mesh
+        mesh = pv.PolyData(self.points)
+
+        # Model for spatial correlation
+        model = gs.Gaussian(dim=3, var=1.0, len_scale=0.5)
+        srf = gs.SRF(model, mean=(0, 0, 0), generator="VectorField")
+
+        # Cholesky
+        L = np.linalg.cholesky(Sigma)
+        vec_fields = np.empty((M, self.points.shape[0], 3))
+
+        for m in range(M):
+            # Use the same RNG for SRF
+            f = srf.mesh(mesh, points="points", seed=rng.integers(1e9))
+            vec_fields[m] = (L @ f).T
+
+        vec_fields = vec_fields.reshape(M, 3 * self.points.shape[0])
+        X = vec_fields.T
+
+        f = np.zeros((2 * self.V, X.shape[1]))
+        for v in range(self.V):
+            f[v * 2 : ( v + 1 ) * 2] = self.local_bases[v].T @ X[v * 3 : ( v + 1 ) * 3]
+
+        def SampleCovariance(X):
+            X_mean = np.mean(X, axis=1)
+            X_centered = X - X_mean.reshape(-1,1)
+            S = (X_centered @ X_centered.T) / (X_centered.shape[1] - 1)
+            return S
+
+        covariance = SampleCovariance(f)
+
+        return CochainSample(
+            X=f, 
+            covariance=covariance, 
+            X_GT=f
+            )
+    
+    def cochains_sampling(
+        self, 
+        N : int = 1000, 
+        CL : np.ndarray = None,
+        pseudoinv : bool = True, 
+        normalized : bool = False, 
+        seed : int = 42,
+        full : bool = True,
+        noisy : bool = False,
+        SNR : float = None,
+        op : str = 'Unnormalized'
+    ) -> CochainSample:
+        """ Method to sample 0-cochains from N(0, pinv(L) + sigma^2I)
+
+        Parameters
+        ----------
+        N : int
+            Number of signals
+        CL : np.ndarray
+            Placeholder to support different laplacian for perturbed sampling
+        pseudoinv : bool
+            Flag to whether use the pinv of the laplacian
+        normalized : bool 
+            Flag to whether normalize signals
+        full : bool
+            Flag to whether signals should be unpacked in local measurementes
+        noise : bool
+            Flag for AWGN
+        SNR : float
+            SNR for noisy signals
+        op : str
+            Identifier of the Laplacian operator to be used
+        Returns
+        -------
+        CochainSample
+            Generated 0-cochains
+        """
+
+        assert op in ['Normalized','Unnormalized'], 'Invalid Laplacian operator'
+        CL_ = CL if CL is not None else self.laplacians[op]
+        np.random.seed(seed)
+        if pseudoinv:
+            Sigma = np.linalg.pinv(CL_)
+            X = np.random.multivariate_normal(mean=np.zeros(self.V * self.d_hat), cov=Sigma, size=N).T
+            X_GT = np.copy(X)
+
+        else:
+            P = self.CL + np.eye(CL_.shape[0])
+            Sigma = np.linalg.pinv(P)
+
+            X = np.random.randn(self.V * self.d_hat, N)
+            M = np.linalg.cholesky(Sigma)
+            X = M.T @ X
+
+        if noisy:
+            assert SNR is not None, "Provide a noise variance value"
+            signal_power = np.mean(X ** 2)
+            SNR_linear = 10 ** (SNR / 10)
+
+            noise_power = signal_power / SNR_linear
+            X += np.random.randn(*X.shape) * np.sqrt(noise_power)
+        
+        if normalized:
+            X = X / np.linalg.norm(X, axis=0)
+
+        if not full:
+            X = {
+                v: X[v*self.d:(v + 1)*self.d, :] / np.linalg.norm(X[v*self.d_hat:(v + 1)*self.d_hat, :], axis=0)
+                for v in range(self.V)
+            }
+
+        def SampleCovariance(X):
+            X_mean = np.mean(X, axis=1)
+            X_centered = X - X_mean.reshape(-1,1)
+            S = (X_centered @ X_centered.T) / (X_centered.shape[1] - 1)
+            return S
+
+        covariance = SampleCovariance(X if full else np.vstack([v for v in X.values()]))
+
+        return CochainSample(
+            X=X, 
+            covariance=covariance, 
+            X_GT = X_GT
+            )
+        

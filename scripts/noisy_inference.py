@@ -16,7 +16,6 @@ from src.baselines.SLGP import SmoothSheafDiffusion
 from src.builder import *
 from src.solver import *
 
-
 @hydra.main(
     config_path="../configs",  
     config_name="noisy_inference",
@@ -25,25 +24,30 @@ from src.solver import *
 def main(cfg: DictConfig):
     """Main experimental loop"""
 
-    # Define some usefull paths
-    CURRENT: Path = Path('.')
-    RESULTS_PATH: Path = CURRENT / 'data/interim'
-
-    # Create directories
-    RESULTS_PATH.mkdir(exist_ok=True, parents=True)
-
     # Read simulations specific variables
     V : int = cfg.dimensions.V
     d : int = cfg.dimensions.d
     graph_seed : int = cfg.dimensions.seed
+    graph : str = cfg.graph
 
     ratio : float = cfg.signals.ratio
     noisy : bool = cfg.signals.noisy
     signals_seed : int = cfg.signals.seed
     SNR : float = cfg.signals.SNR
 
+    # Define some useful paths
+    CURRENT: Path = Path('.')
+    folder_uuid : str = f"graph{graph}_V{V}_d{d}_graphseed{graph_seed}_{cfg.solvers.SCGL.proximal_mode}_{cfg.solvers.SCGL.alpha}_{cfg.solvers.SCGL.beta}"
+    RESULTS_PATH: Path = CURRENT / 'data/interim/noisy_inference/' / folder_uuid
+
+    # Create directories
+    RESULTS_PATH.mkdir(exist_ok=True, parents=True)
+    
+    # Check for consistency
+    if SNR == 'None':
+        noisy = False
+
     # Graph istantiation 
-    graph = cfg.graph
     match graph:
         case 'ER':
             graph_ = ERCG(
@@ -72,7 +76,7 @@ def main(cfg: DictConfig):
                 p_in = cfg.graphs.SBM.p_in,
                 p_out = cfg.graphs.SBM.p_out,
             )
-    
+
     X = graph_.cochains_sampling(
         N = int(V * d * ratio),
         seed = signals_seed,
@@ -88,7 +92,7 @@ def main(cfg: DictConfig):
             solver_ = SCGL(
                 V = V,
                 d = d,
-                k = np.sum(np.isclose(np.linalg.eigvals(graph_.L),0)),
+                k = np.sum(np.isclose(np.linalg.eigvalsh(graph_.L),0)),
                 alpha = cfg.solvers.SCGL.alpha,
                 beta = cfg.solvers.SCGL.beta,
                 initialization_mode = 'ID-QP',
@@ -104,7 +108,6 @@ def main(cfg: DictConfig):
             sols = solver_.fit(X.X)
             w, O = sols["SCGL"]['w'], sols["SCGL"]['O']
 
-            L_hat_inits = None
             L_hat = O.T @ LKron(w, V, d) @ O
             w_hat_bin = (w > 0).astype(int)
 
@@ -112,13 +115,14 @@ def main(cfg: DictConfig):
             solver_ = SCGL(
                 V = V,
                 d = d,
-                k = np.sum(np.isclose(np.linalg.eigvals(graph_.L),0)),
+                k = np.sum(np.isclose(np.linalg.eigvalsh(graph_.L),0)),
                 alpha = cfg.solvers.SCGL.alpha,
                 beta = cfg.solvers.SCGL.beta,
                 initialization_seed = cfg.dimensions.seed,
                 initialization_mode = cfg.solvers.SCGL.initialization_mode,
                 proximal_mode = cfg.solvers.SCGL.proximal_mode,
                 update_frames = cfg.solvers.SCGL.update_frames,
+                max_w_its = cfg.solvers.SCGL.max_w_its,
                 SOC = cfg.solvers.SCGL.SOC,
                 rho = cfg.solvers.SCGL.rho,
                 noisy = cfg.signals.noisy,
@@ -130,14 +134,12 @@ def main(cfg: DictConfig):
 
             sols = solver_.fit(X.X)
 
-            w_init, O_init = sols["Initialization"]['w'], sols["Initialization"]['O']
             w, O = sols["SCGL"]['w'], sols["SCGL"]['O']
+            w[w <= 0.05] = 0
 
-            L_hat_inits = O_init.T @ LKron(w_init, V, d) @ O_init
             L_hat = O.T @ LKron(w, V, d) @ O
-            
+        
             w_hat_bin = (w > 0).astype(int)
-            w_init_bin = (w_init > 0).astype(int)
 
         case 'SPD':
             solver_ = SheafConnectionLaplacian(
@@ -148,20 +150,27 @@ def main(cfg: DictConfig):
             # Initializing the SPD solver and validating parameter alpha via cross validation
             solver_.cross_validation(X.X, verbose = 0)
 
-            L_hat_inits = None
             L_hat = solver_.solve(X.covariance, verbose = 0)
             w_hat_bin = L_spy(L_hat, d)
 
         case 'SLGP':
-            L_hat_inits = None
             L_hat = SmoothSheafDiffusion(X.X, V, d, len(graph_.edges)).LaplacianBuilder()
             w_hat_bin = L_spy(L_hat, d)
 
-    uuid : str = f"V{V}_d{d}_graphseed{graph_seed}_signalseed{signals_seed}_SNR{SNR}_ratio{ratio}_{solver}_{graph}_{datetime.today().strftime("%Y%m%d")}"
+        case 'CONTROL':
+            L_hat = graph_.CL
+            w_hat_bin = L_spy(L_hat, d)
+
+    uuid : str = f"V{V}_d{d}_graphseed{graph_seed}_signalseed{signals_seed}_SNR{SNR}_ratio{ratio}_{solver}_{graph}_{cfg.solvers.SCGL.proximal_mode}_{cfg.solvers.SCGL.alpha}_{cfg.solvers.SCGL.beta}_{datetime.today().strftime("%Y%m%d")}"
 
     # Collecting metrics
     # Test signals for total variation
-    X_test = graph_.cochains_sampling(int(d * V * ratio),)
+    k_0 = np.sum(np.isclose(np.linalg.eigvalsh(graph_.L),0))
+    X_test = graph_.cochains_sampling(1000, noisy=False)
+
+    if noisy:
+        X_test_noisy = graph_.cochains_sampling(1000, noisy=True, SNR=SNR)
+        gamma_test = 1 / (2 * np.mean(np.linalg.eigvalsh(X_test_noisy.covariance)[0 : d * k_0]))
 
     # Ground truth
     w_true = L_inv(graph_.L)
@@ -170,8 +179,12 @@ def main(cfg: DictConfig):
     f1_score_ = f1_score(w_true_bin, w_hat_bin)
     precision_ = precision_score(w_true_bin, w_hat_bin)
     recall_ = recall_score(w_true_bin, w_hat_bin)
-    empirical_TV = np.trace(L_hat @ X_test.covariance) 
-
+    empirical_TV = np.abs(np.trace(L_hat @ X_test.covariance) - d * (V - k_0)) / (d * (V - k_0))
+    if noisy:
+        signal_NMSE = np.linalg.norm(np.linalg.inv(L_hat + gamma_test * np.eye(d * V)) @ (gamma_test * X_test_noisy.X) - X_test.X, ord='fro') ** 2 / np.linalg.norm(X_test.X, ord='fro') ** 2
+    else:
+        signal_NMSE = 0
+        
     pd.DataFrame({
         'V': [V],
         'd': [d], 
@@ -184,30 +197,10 @@ def main(cfg: DictConfig):
         'F1': [f1_score_],
         'Precision': [precision_],
         'Recall': [recall_],
-        'Empirical Total Variation': [empirical_TV]
+        'Empirical Total Variation': [empirical_TV],
+        'Signal Error': [signal_NMSE]
     }).to_parquet(RESULTS_PATH / f'{uuid}.parquet')
 
-    if L_hat_inits is not None:
-        uuid : str = f"V{V}_d{d}_graphseed{graph_seed}_signalseed{signals_seed}_SNR{SNR}_ratio{ratio}_initSCOP_{graph}_{datetime.today().strftime("%Y%m%d")}"
-        
-        f1_score_init = f1_score(w_true_bin, w_init_bin)
-        precision_init = precision_score(w_true_bin, w_init_bin)
-        recall_init = recall_score(w_true_bin, w_init_bin)
-        empirical_TV_init = np.trace(L_hat_inits @ X_test.covariance) 
-        pd.DataFrame({
-            'V': [V],
-            'd': [d], 
-            'Ratio': [ratio],
-            'Graph Seed': [graph_seed],
-            'Signal Seed': [signals_seed],
-            'Solver': "SCOP",
-            'Graph': [graph],
-            'F1': [f1_score_init],
-            'Precision': [precision_init],
-            'Recall': [recall_init],
-            'Empirical Total Variation': [empirical_TV_init]
-        }).to_parquet(RESULTS_PATH / f'{uuid}.parquet')
-
-if __name__ == '__main__':
+if __name__ == '__main__': 
     main()
 
