@@ -167,12 +167,13 @@ class CG:
             X_GT = np.copy(X)
 
         else:
-            P = self.CL + np.eye(CL_.shape[0])
+            P = CL_ + np.eye(CL_.shape[0])
             Sigma = np.linalg.pinv(P)
 
             X = np.random.randn(self.V * self.d, N)
             M = np.linalg.cholesky(Sigma)
             X = M.T @ X
+            X_GT = np.copy(X)
 
         if noisy:
             assert SNR is not None, "Provide a noise variance value"
@@ -438,7 +439,7 @@ class ERCG(CG):
         self.q = self.V - self.k
         
         # Bounds on the weight distribution
-        self.w_LB = w_LB 
+        self.w_LB = w_LB
         self.w_UB = w_UB
 
         if p is None:
@@ -496,7 +497,7 @@ class ERCG(CG):
         """
         W = np.zeros_like(self.A, dtype=float)
         for edge in self.edges:
-            w = np.random.uniform(low=0.2, high=3)
+            w = np.random.uniform(low=self.w_LB, high=self.w_UB)
             W[edge[0], edge[1]] = w
             W[edge[1], edge[0]] = w
         return W
@@ -504,8 +505,8 @@ class ERCG(CG):
     def laplacian(
         self
     ) -> np.ndarray:
-        """ Returns a valid weighted laplacian 
-        
+        """ Returns a valid weighted laplacian
+
         Returns
         -------
         np.ndarray
@@ -707,7 +708,7 @@ class GridCG(CG):
         consistent : bool =True, 
         special : bool =True
     ) -> None:
-        super().__init__(V = side ** 2, d = d, seed = seed, kron = kron, consitent = consistent, special = special)
+        super().__init__(V = side ** 2, d = d, seed = seed, kron = kron, consistent = consistent, special = special)
         
         self.w_LB = w_LB
         self.w_UB = w_UB
@@ -721,8 +722,8 @@ class GridCG(CG):
         self.A = nx.adjacency_matrix(self.G).toarray()
         self.edges = list(self.G.edges)
 
-        self.W = self.Weights()
-        self.L = self.Laplacian()
+        self.W = self.weights()
+        self.L = self.laplacian()
 
         self.random_connection_graph()
     
@@ -738,7 +739,7 @@ class GridCG(CG):
         """
         W = np.zeros_like(self.A, dtype=float)
         for edge in self.edges:
-            w = np.random.uniform(low=0.2, high=3)
+            w = np.random.uniform(low=self.w_LB, high=self.w_UB)
             W[edge[0], edge[1]] = w
             W[edge[1], edge[0]] = w
         return W
@@ -894,6 +895,7 @@ class FibonacciSphereGraph:
     def random_tangent_bundle_signals(
             self, 
             Sigma : np.ndarray = None, 
+            len_scale: float = 10,
             M : int = 1000, 
             seed : int = 42
         ) -> None:
@@ -908,7 +910,7 @@ class FibonacciSphereGraph:
         mesh = pv.PolyData(self.points)
 
         # Model for spatial correlation
-        model = gs.Gaussian(dim=3, var=1.0, len_scale=0.5)
+        model = gs.Gaussian(dim=3, var=1.0, len_scale=len_scale)
         srf = gs.SRF(model, mean=(0, 0, 0), generator="VectorField")
 
         # Cholesky
@@ -988,12 +990,13 @@ class FibonacciSphereGraph:
             X_GT = np.copy(X)
 
         else:
-            P = self.CL + np.eye(CL_.shape[0])
+            P = CL_ + np.eye(CL_.shape[0])
             Sigma = np.linalg.pinv(P)
 
             X = np.random.randn(self.V * self.d_hat, N)
             M = np.linalg.cholesky(Sigma)
             X = M.T @ X
+            X_GT = np.copy(X)
 
         if noisy:
             assert SNR is not None, "Provide a noise variance value"
@@ -1008,7 +1011,7 @@ class FibonacciSphereGraph:
 
         if not full:
             X = {
-                v: X[v*self.d:(v + 1)*self.d, :] / np.linalg.norm(X[v*self.d_hat:(v + 1)*self.d_hat, :], axis=0)
+                v: X[v*self.d_hat:(v + 1)*self.d_hat, :] / np.linalg.norm(X[v*self.d_hat:(v + 1)*self.d_hat, :], axis=0)
                 for v in range(self.V)
             }
 

@@ -73,20 +73,8 @@ def L_adjoint(
     """
 
     N = M.shape[1]
-    k = (N * (N - 1)) // 2
-    j, l = 0, 1
-    w = np.zeros(k)
-
-    # The definition of the adjoint operator requires to define a moving index and compute the sum of 4 distinct entries of the matrix
-    for i in range(k):
-        w[i] = M[j, j] + M[l, l] - (M[l, j] + M[j, l])
-        if l == (N - 1):
-            j += 1
-            l = j + 1
-        else:
-            l += 1
-
-    return w
+    j_idx, l_idx = np.triu_indices(N, k=1)
+    return M[j_idx, j_idx] + M[l_idx, l_idx] - M[l_idx, j_idx] - M[j_idx, l_idx]
 
 
 def L_inv(
@@ -96,29 +84,17 @@ def L_inv(
 
     Parameters
     ----------
-    M : np.ndarray 
+    M : np.ndarray
         Input Laplacian-like matrix of dimension V x V.
-    
+
     Returns
     -------
     np.ndarray
         Edges weights vector of dimension V(V-1)/2.
     """
     N = M.shape[1]
-    k = (N * (N - 1)) // 2
-    w = np.empty(k)
-    l = 0
-
-    # Populate the vector from the upper triangular part of the input matrix
-    for i in range(N - 1):
-        for j in range(i + 1, N):
-            w[l] = - M[i, j]
-            l += 1
-    
-    # Check for non-negativity
-    w[w < 0] = 0
-
-    return w
+    i_idx, j_idx = np.triu_indices(N, k=1)
+    return np.maximum(0, -M[i_idx, j_idx])
 
 #############################################################################################
 ###################### LINEAR OPERATORS FOR CONNECTION LAPLACIANS ###########################
@@ -152,7 +128,7 @@ def LKron(
 
 
 def LKron_adjoint(
-    M: np.ndarray, 
+    M: np.ndarray,
     d: int
 ) -> np.ndarray:
     """ Adjoint of the linear operator mapping edge weights to d-Kronecker combinatorial Laplacian
@@ -169,27 +145,20 @@ def LKron_adjoint(
     np.ndarray
         Edges weights vectors of dimension V(V-1)/2
     """
-    N = M.shape[1] // d  
-    k = (N * (N - 1)) // 2  
-    j, l = 0, 1
-    w = np.zeros(k)
+    N = M.shape[1] // d
+    j_idx, l_idx = np.triu_indices(N, k=1)
 
-    # Similarly to the combinatorial one, this operator requires the scanning of specific blocks of the connection Laplacians
-    for i in range(k):
-        block_jj = M[j*d:(j+1)*d, j*d:(j+1)*d]
-        block_ll = M[l*d:(l+1)*d, l*d:(l+1)*d]
-        block_lj = M[l*d:(l+1)*d, j*d:(j+1)*d]
-        block_jl = M[j*d:(j+1)*d, l*d:(l+1)*d]
+    # Diagonal block traces: sum diagonal of each d×d block
+    block_diag_traces = np.diag(M).reshape(N, d).sum(axis=1)  # (N,)
 
-        w[i] = np.trace(block_jj + block_ll - block_lj - block_jl)
+    # Off-diagonal block traces via vectorized fancy indexing
+    r = np.arange(d)
+    j_off = j_idx[:, None] * d + r[None, :]  # (k, d)
+    l_off = l_idx[:, None] * d + r[None, :]  # (k, d)
+    trace_jl = M[j_off, l_off].sum(axis=1)   # trace of M_jl blocks
+    trace_lj = M[l_off, j_off].sum(axis=1)   # trace of M_lj blocks
 
-        if l == (N - 1):
-            j += 1
-            l = j + 1
-        else:
-            l += 1
-
-    return w
+    return block_diag_traces[j_idx] + block_diag_traces[l_idx] - trace_jl - trace_lj
 
 
 def L_spy(
@@ -211,18 +180,15 @@ def L_spy(
         Sparsity pattern in form of a binary vector for edges
     """
     N = L.shape[1] // d
-    k = (N * (N - 1)) // 2
-    w = np.empty(k)
-    l = 0
+    i_idx, j_idx = np.triu_indices(N, k=1)
+    r = np.arange(d)
 
-    # Populate the vector from the upper triangular part of the input matrix
-    for i in range(N - 1):
-        for j in range(i + 1, N):
-            block = L[i * d : (i + 1) * d, j * d : (j + 1) * d]
-            w[l] = int(not np.all(np.isclose(block, 0, atol=1e-8)))
-            l += 1
-    
-    return w.astype(int)
+    # Extract all upper-triangular d×d blocks at once: shape (k, d, d)
+    i_rows = (i_idx[:, None] * d + r[None, :])[:, :, None]  # (k, d, 1)
+    j_cols = (j_idx[:, None] * d + r[None, :])[:, None, :]  # (k, 1, d)
+    blocks = L[i_rows, j_cols]                               # (k, d, d)
+
+    return (~np.all(np.isclose(blocks, 0, atol=1e-8), axis=(1, 2))).astype(int)
 
 
 def Update_Z(
@@ -257,9 +223,7 @@ def Update_Z(
     """
     
     LL_hat = O.T @ LKron(w = w, V = V, d = d) @ O
-    F = np.linalg.inv(gamma * np.eye(V * d) + LL_hat)
-
-    return F @ (gamma * X)
+    return np.linalg.solve(gamma * np.eye(V * d) + LL_hat, gamma * X)
 
 
 def Update_w(
@@ -327,7 +291,7 @@ def Update_w(
         grad = LKron_adjoint(LKron(w, V, d) - S_hat, d) 
         
         if exact_linesearch:
-            # Armijo backtrack 
+            # Exact stepsize for the quadratic objective
             c = LKron_adjoint(S_hat, d)
             L_kron_adg_grad = LKron_adjoint(LKron(grad, V, d), d)
             mu = np.dot(grad, L_kron_adg_grad) / (np.dot(w, L_kron_adg_grad) - np.dot(c, grad))
@@ -350,6 +314,92 @@ def Update_w(
     return w
 
 
+def _build_O_problem(
+    A : np.ndarray,
+    C : np.ndarray,
+    V : int,
+    d : int,
+    bases : dict,
+    sign : int = 1
+) -> tuple:
+    """ Build a pymanopt Problem for optimizing sign * trace(O A O^T C) over block-diagonal SO(d).
+
+    Shared by Update_O_RG (sign=+1, minimize smoothness) and the QP initialization
+    (sign=-1, maximize alignment with S_pinv).
+
+    Parameters
+    ----------
+    A : np.ndarray
+        Symmetric matrix (covariance S or pseudo-inverse S_pinv)
+    C : np.ndarray
+        Symmetric Kronecker Laplacian LKron(w, V, d)
+    V : int
+        Number of nodes
+    d : int
+        Stalk dimension
+    bases : dict
+        Fixed bases for a subset of nodes {v: O_v}; None means all free
+    sign : int
+        +1 to minimize trace, -1 to maximize (i.e. minimize -trace)
+
+    Returns
+    -------
+    tuple
+        (map_idx, free_vs, problem) or (None, None, None) if all bases are fixed
+    """
+    bases_resolved = bases if bases is not None else {}
+    free_vs = [v for v in range(V) if v not in bases_resolved]
+
+    if not free_vs:
+        return None, None, None
+
+    manifold = Product([Stiefel(d, d, retraction='polar') for _ in free_vs])
+    map_idx = {v: i for i, v in enumerate(free_vs)}
+
+    def _assemble(*O_blocks):
+        O_mat = anp.zeros((d * V, d * V), dtype=anp.float64)
+        for v in range(V):
+            if v in bases_resolved:
+                O_mat[v * d : (v + 1) * d, v * d : (v + 1) * d] = anp.array(bases_resolved[v])
+            else:
+                block = O_blocks[map_idx[v]]
+                val = block if isinstance(block, anp.ndarray) else block._value
+                O_mat[v * d : (v + 1) * d, v * d : (v + 1) * d] = anp.array(val)
+        return O_mat
+
+    @pymanopt.function.autograd(manifold)
+    def cost(*O_blocks):
+        O_mat = _assemble(*O_blocks)
+        return sign * anp.trace(O_mat @ A @ O_mat.T @ C)
+
+    @pymanopt.function.autograd(manifold)
+    def euclidean_gradient(*O_blocks):
+        O_mat = _assemble(*O_blocks)
+        gradients = []
+        for v in free_vs:
+            g = np.zeros((d, d), dtype=np.float64)
+            g += (sign * 2 *
+                  C[v * d : (v + 1) * d, v * d : (v + 1) * d] @
+                  O_mat[v * d : (v + 1) * d, v * d : (v + 1) * d] @
+                  A[v * d : (v + 1) * d, v * d : (v + 1) * d])
+            for m in range(V):
+                if m != v:
+                    g += sign * (
+                        C[v * d : (v + 1) * d, m * d : (m + 1) * d] @
+                        O_mat[m * d : (m + 1) * d, m * d : (m + 1) * d] @
+                        A[m * d : (m + 1) * d, v * d : (v + 1) * d]
+                        +
+                        A[m * d : (m + 1) * d, v * d : (v + 1) * d] @
+                        O_mat[m * d : (m + 1) * d, m * d : (m + 1) * d].T @
+                        C[v * d : (v + 1) * d, m * d : (m + 1) * d]
+                    )
+            gradients.append(g)
+        return gradients
+
+    problem = Problem(manifold, cost=cost, euclidean_gradient=euclidean_gradient)
+    return map_idx, free_vs, problem
+
+
 def Update_O_RG(
     O : np.ndarray,
     S : np.ndarray,
@@ -361,30 +411,29 @@ def Update_O_RG(
     bases : dict = None,
     solver : str = 'RCG',
     ) -> np.ndarray:
-    """ Optimization step in block diagonal matrix O collecting the nodes frames for the learning problem in the form of a Riemannian routine via pymanopt. 
+    """ Optimization step in block diagonal matrix O collecting the nodes frames for the learning problem in the form of a Riemannian routine via pymanopt.
 
     Parameters
     ----------
-
-        O : np.ndarray 
+        O : np.ndarray
             Current iterate value for O.
-        S : np.ndarray 
+        S : np.ndarray
             Emprical variance-covariance matrix of the given set of 0-cochains.
-        w : np.ndarray 
+        w : np.ndarray
             Current iterate value for w (vectors of edge weights).
-        V : int 
+        V : int
             Number of nodes in the graph.
-        d : int 
+        d : int
             Dimension of the nodes stalks.
-        O_init : bool 
+        O_init : bool
             Flag for whether the initialization of RCG is given by O or not.
-        max_its : int 
+        max_its : int
             Maximum number of iterations of RCG subroutine
-        bases : dict 
+        bases : dict
             Hashmap for an eventual prior knowledge on the nodes frames
-        solver : str 
+        solver : str
             Identifier for the Riemannian solver
-    
+
     Returns
     -------
     np.ndarray
@@ -393,111 +442,33 @@ def Update_O_RG(
 
     assert solver in ['RCG', 'RSD', 'TR'], 'Invalid identifier for the Riemannian solver'
 
-    # Matrix precomputation for computation streamline
-    A = S 
     C = LKron(w, V, d)
+    map_idx, free_vs, problem = _build_O_problem(S, C, V, d, bases, sign=1)
 
-    # Eventually inject prior knowledge in defining the manifold structure as a product one
-    if bases is None:
-        manifold = Product([Stiefel(d, d, retraction = 'polar') for _ in range(V)])
-        bases = {}
-        map_bases = {v: v for v in range(V)}
-    else:
-        if len(bases) == V:
-            return O  
-        
-        free_vs = [v for v in range(V) if v not in bases]
-        manifold = Product([Stiefel(d,d, retraction = 'polar') for _ in range(len(free_vs))])
-        map_bases = {v: i for i, v in enumerate(free_vs)}
+    if problem is None:
+        return O
 
-    # Subroutine for the cost function tr(OAO.TC) built by injecting the blkdiag structure 
-    @pymanopt.function.autograd(manifold)
-    def cost(*O_blocks):
-        O = anp.zeros((d * V, d * V), dtype=anp.float64)
-        for v in range(V):
-            if v in bases.keys():
-                O[v * d : ( v + 1 ) * d, v * d : ( v + 1 ) * d] = anp.array(bases[v])
-            else:
-                if isinstance(O_blocks[map_bases[v]], anp.ndarray):
-                    O[v * d : ( v + 1 ) * d, v * d : ( v + 1 ) * d] = anp.array(O_blocks[map_bases[v]])
-                else:
-                    O[v * d : ( v + 1 ) * d, v * d : ( v + 1 ) * d] = anp.array(O_blocks[map_bases[v]]._value)
-
-        return anp.trace(O @ A @ O.T @ C) 
-    
-    # Subroutine for the euclidean gradient of tr(OAO.TC) built by injecting the blkdiag structure 
-    @pymanopt.function.autograd(manifold)
-    def euclidean_gradient(*O_blocks):
-        O = anp.zeros((d * V, d * V), dtype=anp.float64)
-        for v in range(V):
-            if v in bases.keys():
-                O[v * d : ( v + 1 ) * d, v * d : ( v + 1 ) * d] = anp.array(bases[v])
-            else:
-                if isinstance(O_blocks[map_bases[v]], anp.ndarray):
-                    O[v * d : ( v + 1 ) * d, v * d : ( v + 1 ) * d] = anp.array(O_blocks[map_bases[v]])
-                else:
-                    O[v * d : ( v + 1 ) * d, v * d : ( v + 1 ) * d] = anp.array(O_blocks[map_bases[v]]._value)
-
-        gradients = []
-        
-        for v in range(V):
-            if v not in bases.keys():
-                grad_block = np.zeros((d, d), dtype=np.float64)
-                
-                grad_block += (
-                    2 * 
-                    C[v * d : (v + 1) * d, v * d : (v + 1) * d] @ 
-                    O[v * d : (v + 1) * d, v * d : (v + 1) * d] @ 
-                    A[v * d : (v + 1) * d, v * d : (v + 1) * d]
-                )
-
-                for m in range(V):
-                    if m != v:
-                        grad_block += ( 
-                            C[v * d : (v + 1) * d, m * d : (m + 1) * d] @ 
-                            O[m * d : (m + 1) * d, m * d : (m + 1) * d] @ 
-                            A[m * d : (m + 1) * d, v * d : (v + 1) * d]
-                            +
-                            A[m * d : (m + 1) * d, v * d : (v + 1) * d] @ 
-                            O[m * d : (m + 1) * d, m * d : (m + 1) * d].T @ 
-                            C[v * d : (v + 1) * d, m * d : (m + 1) * d]
-                            )
-                
-                gradients.append(grad_block)
-        return gradients
-
-    # Subroutine for the initialization (from O to list of variables)
-    def O_spack(O, d, V):
-        O_blocks = []
-        for v in range(V):
-            if v not in bases:
-                O_blocks.append(O[v * d : ( v + 1 ) * d, v * d : ( v + 1 ) * d])
-            else:
-                O_blocks.append(bases[v])
-
-        return O_blocks
-
-    # Problem and solver istantation
-    problem = Problem(manifold, cost=cost, euclidean_gradient=euclidean_gradient)
     if solver == 'RCG':
-        solver = ConjugateGradient(verbosity=0, max_iterations = max_its)
+        solver_obj = ConjugateGradient(verbosity=0, max_iterations=max_its)
     elif solver == 'RSD':
-        solver = SteepestDescent(verbosity=0, max_iterations = max_its)
+        solver_obj = SteepestDescent(verbosity=0, max_iterations=max_its)
     elif solver == 'TR':
-        solver = TrustRegions(verbosity=0, max_iterations = max_its)
+        solver_obj = TrustRegions(verbosity=0, max_iterations=max_its)
 
     if O_init:
-        O_hat = solver.run(problem, initial_point = O_spack(O, d, V)).point
+        init_point = [O[v * d : (v + 1) * d, v * d : (v + 1) * d] for v in free_vs]
+        result = solver_obj.run(problem, initial_point=init_point).point
     else:
-        O_hat = solver.run(problem, ).point
+        result = solver_obj.run(problem).point
 
     # Reassemble full O
+    bases_resolved = bases if bases is not None else {}
     O_full = anp.zeros((d * V, d * V))
     for v in range(V):
-        if v in bases:
-            O_full[v*d:(v+1)*d, v*d:(v+1)*d] = bases[v]
+        if v in bases_resolved:
+            O_full[v * d : (v + 1) * d, v * d : (v + 1) * d] = bases_resolved[v]
         else:
-            O_full[v*d:(v+1)*d, v*d:(v+1)*d] = O_hat[map_bases[v]]
+            O_full[v * d : (v + 1) * d, v * d : (v + 1) * d] = result[map_idx[v]]
 
     return O_full
 
@@ -631,41 +602,40 @@ def Update_U(
     k : int,
     V : int,
     d : int,
-) -> np.ndarray:
+) -> tuple:
     """ Optimization step in eigenvector matrix U in the form of a generalized Eigenvalue problem solution via Von Neuman trace inequality
 
     Parameters
     ----------
-    w : np.ndarray 
+    w : np.ndarray
         Current iterate value for w (vectors of edge weights).
-    k : int 
+    k : int
         Number of connected components in the graph.
-    V : int 
+    V : int
         Number of nodes in the graph.
     d : int
         Dimension of the nodes stalks.
-    
+
     Returns
     -------
-    np.ndarray
-        Refined estimate of U
+    tuple
+        (U_hat, eigenvalues) — eigenvectors restricted to St(dV, d(V-k)) and full eigenvalue array
     """
 
     # The solution is given directly by the eigenvectors of the estimated connection laplacian
     LC_hat = LKron(w, V, d)
-    _, U_hat = np.linalg.eigh(LC_hat)
+    eigenvalues, U_hat = np.linalg.eigh(LC_hat)
 
     # Restriction to St(dV, d(V-k))
     U_hat = U_hat[:, k * d : ]
-    return U_hat
+    return U_hat, eigenvalues
 
 
 def Update_Lambda(
-    U : np.ndarray, 
-    w : np.ndarray, 
-    beta : float, 
-    gamma : float,
-    c1 : float, 
+    U : np.ndarray,
+    w : np.ndarray,
+    beta : float,
+    c1 : float,
     c2 : float,
     V : int,
     k : int,
@@ -677,8 +647,6 @@ def Update_Lambda(
     ----------
         U : np.ndarray
             Current iterate value for U (matrix of eigenvectors of the connection laplacian).
-        O : np.ndarray
-            Current iterate value for O (block diagonal matrix of local node frames).
         w : np.ndarray
             Current iterate value for w (vectors of edge weights).
         beta : float
@@ -856,86 +824,28 @@ def Initialization(
         bases,
     ):
         C = LKron(w, V, d)
+        map_idx, free_vs, problem = _build_O_problem(S_pinv, C, V, d, bases, sign=-1)
 
-        if bases is None:
-            manifold = Product([Stiefel(d, d, retraction = 'polar') for _ in range(V)])
-            bases = {}
-            map_bases = {v: v for v in range(V)}
-        else:
-            if len(bases) == V:
-                return O  
-            
-            free_vs = [v for v in range(V) if v not in bases]
-            manifold = Product([Stiefel(d, d, retraction = 'polar') for _ in range(len(free_vs))])
-            map_bases = {v: i for i, v in enumerate(free_vs)}
-        
-        @pymanopt.function.autograd(manifold)
-        def cost(*O_blocks):
-            O = anp.zeros((d * V, d * V), dtype=anp.float64)
+        if problem is None:
+            # All bases fixed — assemble O from the fixed bases dict
+            bases_resolved = bases if bases is not None else {}
+            O_full = anp.zeros((d * V, d * V))
             for v in range(V):
-                if v in bases.keys():
-                    O[v * d : ( v + 1 ) * d, v * d : ( v + 1 ) * d] = anp.array(bases[v])
-                else:
-                    if isinstance(O_blocks[map_bases[v]], anp.ndarray):
-                        O[v * d : ( v + 1 ) * d, v * d : ( v + 1 ) * d] = anp.array(O_blocks[map_bases[v]])
-                    else:
-                        O[v * d : ( v + 1 ) * d, v * d : ( v + 1 ) * d] = anp.array(O_blocks[map_bases[v]]._value)
+                O_full[v * d : (v + 1) * d, v * d : (v + 1) * d] = bases_resolved[v]
+            return O_full
 
-            return - anp.trace(O @ S_pinv @ O.T @ C) 
-
-        @pymanopt.function.autograd(manifold)
-        def euclidean_gradient(*O_blocks):
-            O = anp.zeros((d * V, d * V), dtype=anp.float64)
-            for v in range(V):
-                if v in bases.keys():
-                    O[v * d : ( v + 1 ) * d, v * d : ( v + 1 ) * d] = anp.array(bases[v])
-                else:
-                    if isinstance(O_blocks[map_bases[v]], anp.ndarray):
-                        O[v * d : ( v + 1 ) * d, v * d : ( v + 1 ) * d] = anp.array(O_blocks[map_bases[v]])
-                    else:
-                        O[v * d : ( v + 1 ) * d, v * d : ( v + 1 ) * d] = anp.array(O_blocks[map_bases[v]]._value)
-
-            gradients = []
-            
-            for v in range(V):
-                if v not in bases.keys():
-                    grad_block = np.zeros((d, d), dtype=np.float64)
-                                        
-                    grad_block -= (
-                        2 * 
-                        C[v * d : (v + 1) * d, v * d : (v + 1) * d] @ 
-                        O[v * d : (v + 1) * d, v * d : (v + 1) * d] @ 
-                        S_pinv[v * d : (v + 1) * d, v * d : (v + 1) * d]
-                    )
-
-                    for m in range(V):
-                        if m != v:
-                            grad_block -= (
-                                C[v * d : (v + 1) * d, m * d : (m + 1) * d] @ 
-                                O[m * d : (m + 1) * d, m * d : (m + 1) * d] @ 
-                                S_pinv[m * d : (m + 1) * d, v * d : (v + 1) * d]
-                                + 
-                                S_pinv[m * d : (m + 1) * d, v * d : (v + 1) * d] @
-                                O[m * d : (m + 1) * d, m * d : (m + 1) * d].T @ 
-                                C[v * d : (v + 1) * d, m * d : (m + 1) * d]
-                                )
-                    
-                    gradients.append( grad_block)
-            return gradients
-
-        # Problem and solver instantations
-        problem = Problem(manifold, cost=cost, euclidean_gradient=euclidean_gradient)
-        solver = ConjugateGradient(verbosity=0)
-        O_hat = solver.run(problem, initial_point = O_init).point
+        solver_obj = ConjugateGradient(verbosity=0)
+        result = solver_obj.run(problem, initial_point=O_init).point
 
         # Reassemble full O
+        bases_resolved = bases if bases is not None else {}
         O_full = anp.zeros((d * V, d * V))
         for v in range(V):
-            if v in bases:
-                O_full[v*d:(v+1)*d, v*d:(v+1)*d] = bases[v]
+            if v in bases_resolved:
+                O_full[v * d : (v + 1) * d, v * d : (v + 1) * d] = bases_resolved[v]
             else:
-                O_full[v*d:(v+1)*d, v*d:(v+1)*d] = O_hat[map_bases[v]]
-        
+                O_full[v * d : (v + 1) * d, v * d : (v + 1) * d] = result[map_idx[v]]
+
         return O_full
 
     # Subroutine for initialization wrt O

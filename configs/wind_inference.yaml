@@ -1,13 +1,3 @@
-dimensions: 
-  V: 50
-
-signals:
-  ratio: 10
-  train_seed: 42
-  test_seed: 420
-  len_scale: 10
-  laplacian_operator: 'Unnormalized'
-  
 solvers:
   SCGL:
     alpha: 0.0025
@@ -18,8 +8,9 @@ solvers:
     SOC: True
     rho: 100
     fix_beta: False
+    noisy: False
     beta_min: 10
     beta_max: 300
-    beta_factor: 5e-2
+    beta_factor: 5e-3
 
 solver: SCGL

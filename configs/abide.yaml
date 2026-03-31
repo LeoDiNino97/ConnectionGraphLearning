@@ -1,18 +1,8 @@
-dimensions: 
-  V: 50
-
-signals:
-  ratio: 10
-  train_seed: 42
-  test_seed: 420
-  len_scale: 10
-  laplacian_operator: 'Unnormalized'
-  
 solvers:
   SCGL:
     alpha: 0.0025
     beta: 60
-    initialization_mode: 'QP'
+    initialization_mode: 'ID'
     proximal_mode: 'Proximal-LOG'
     update_frames: True
     SOC: True

@@ -1,4 +1,4 @@
-""" Script for experiment 3 in the journal paper """
+""" Script for wind experiment in the journal paper """
 
 import sys
 from pathlib import Path
@@ -19,26 +19,24 @@ from src.utils.dsp_utils import *
 
 @hydra.main(
     config_path="../configs",  
-    config_name="spheres",
+    config_name="hcp",
     version_base="1.3"
 )
 
 def main(cfg: DictConfig):
-    """ Main experimental loop"""
-    # Read simulations specific variables
-    V : int = cfg.dimensions.V
-    d = 2
-    ratio : float = cfg.signals.ratio
-    train_seed : float = cfg.signals.train_seed
-    len_scale : float = cfg.signals.len_scale
+    # Read data 
+    X = np.load('data/processed/HCP/LR_full.npy')
 
-    # Data generation
-    graph_ = FibonacciSphereGraph(V = V, k_neighbors= 4)
-    X_train = graph_.random_tangent_bundle_signals(
-        len_scale = len_scale,
-        M = int(V * d * ratio), 
-        seed=train_seed)
+    d = 7
+    V = X.shape[0] // d
 
+    train_split_idx = int(0.8 * X.shape[1])
+    X_train = X[:, 0 : train_split_idx]
+    X_test = X[:, train_split_idx:]
+    X_train = X
+    C = ( 1 / X_train.shape[1] ) * X_train @ X_train.T
+
+    # Sheaf Laplacian Learning
     solver = cfg.solver
     match solver:
         case 'KRON':
@@ -56,9 +54,10 @@ def main(cfg: DictConfig):
                 beta_min = cfg.solvers.SCGL.beta_min,
                 beta_max = cfg.solvers.SCGL.beta_max,
                 beta_factor = cfg.solvers.SCGL.beta_factor,
+                MAX_ITER=20000
             )
 
-            sols = solver_.fit(X_train.X)
+            sols = solver_.fit(X_train)
             w_, _ = sols["SCGL"]['w'], sols["SCGL"]['O']
 
             L_hat = LKron(w_, V, d) 
@@ -80,9 +79,10 @@ def main(cfg: DictConfig):
                 beta_min = cfg.solvers.SCGL.beta_min,
                 beta_max = cfg.solvers.SCGL.beta_max,
                 beta_factor = cfg.solvers.SCGL.beta_factor,
+                MAX_ITER=20000
             )
 
-            sols = solver_.fit(X_train.X)
+            sols = solver_.fit(X_train)
 
             w_, O_ = sols["SCGL"]['w'], sols["SCGL"]['O']
 
@@ -107,7 +107,7 @@ def main(cfg: DictConfig):
                 beta_factor = cfg.solvers.SCGL.beta_factor,
             )
 
-            w_, _, _, _, O_ , _ = solver_.SCGL_initialization(X_train.X)
+            w_, _, _, _, O_ , _ = solver_.SCGL_initialization(X_train)
             L_hat = O_.T @ LKron(w_, V, d) @ O_
 
         case 'SDP':
@@ -118,20 +118,17 @@ def main(cfg: DictConfig):
                 L0 = None
             )
 
-            solver_.cross_validation(X_train.X, verbose = 0)
-            L_hat = solver_.solve(X_train.covariance, verbose = 1)
+            solver_.cross_validation(X_train, verbose = 0)
+            L_hat = solver_.solve(C, verbose = 1)
 
         case 'SLGP':
             # SLGP Graph estimation
-            L_hat = SmoothSheafDiffusion(X_train.X, V, d, len(graph_.edges)).LaplacianBuilder()
+            L_hat = SmoothSheafDiffusion(X_train, V, d, int(1.1 * np.log(V) * (V - 1) / 2)).LaplacianBuilder()
 
-    uuid : str = f"{solver}_len_scale{len_scale}.npy"
-    SAVE_DIR : Path = Path('.') / 'data/interim/spheres/' / uuid
+    uuid : str = f'wind_{solver}.npy'
+    SAVE_DIR : Path = Path('.') / 'data/interim/HCP/' / uuid
 
     np.save(SAVE_DIR, L_hat)
-    
+
 if __name__ == '__main__':
     main()
-
-
-

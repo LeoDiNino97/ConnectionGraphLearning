@@ -115,9 +115,9 @@ class SCGL:
         fix_beta : bool = False,
         beta_min : float = 10,
         beta_max : float = 3000,
-        rel_tol : float = 1e-4,
-        abs_tol : float = 1e-4,
-        loss_tol : float = 1e-4,
+        rel_tol : float = 1e-8,
+        abs_tol : float = 1e-6,
+        loss_tol : float = 1e-6,
         patience : int = 1000,
         MAX_ITER : int = 20000,
         verbose : bool = 0,
@@ -235,25 +235,24 @@ class SCGL:
         if self.verbose:
             print('Initializing U...')
 
-        U = Update_U(
+        U, _ = Update_U(
             w = w,
             k = self.k,
             V = self.V,
-            d = self.d        
+            d = self.d
         )
 
         if self.verbose:
             print('Initializing lambda...')
 
         lambda_ = Update_Lambda(
-            U = U, 
-            w = w, 
-            beta = self.beta, 
-            gamma = self.gamma,
-            c1 = self.c1, 
-            c2 = self.c2, 
-            V = self.V, 
-            k = self.k, 
+            U = U,
+            w = w,
+            beta = self.beta,
+            c1 = self.c1,
+            c2 = self.c2,
+            V = self.V,
+            k = self.k,
             d = self.d
         )
         
@@ -273,19 +272,13 @@ class SCGL:
         # Preallocating loss
         loss = np.zeros(self.MAX_ITER)
         S = Z @ Z.T / Z.shape[1]
-        
-        if self.proximal_mode != 'ReweightedL1':
-            K = np.copy(S)
-        else:
-            H = self.alpha * (np.eye(self.d * self.V) - np.ones((self.d * self.V, self.d * self.V)))
-            K = S + H
 
         # Initializing patience counter
         plateau_counter = 0
 
         # Handle initialization only baselines:
-        if self.MAX_ITER == 0: 
-            return O, w, None,
+        if self.MAX_ITER == 0:
+            return O, w, None, None, None, None
         else:
             for t in tqdm(range(self.MAX_ITER)):
                 # Adaptive multiplier for noise
@@ -356,35 +349,29 @@ class SCGL:
                     O_hat = O
 
                 # Update U
-                U_hat = Update_U(
-                    w = w_hat, 
-                    k = self.k, 
-                    V = self.V, 
+                U_hat, eigenvalues_hat = Update_U(
+                    w = w_hat,
+                    k = self.k,
+                    V = self.V,
                     d = self.d,
                 )
 
                 # Update lambda
                 lambda_hat = Update_Lambda(
-                    U = U_hat, 
-                    w = w_hat, 
-                    beta = self.beta, 
-                    gamma = self.gamma,
-                    c1 = self.c1, 
-                    c2 = self.c2, 
-                    V = self.V, 
-                    k = self.k, 
+                    U = U_hat,
+                    w = w_hat,
+                    beta = self.beta,
+                    c1 = self.c1,
+                    c2 = self.c2,
+                    V = self.V,
+                    k = self.k,
                     d = self.d
                 )
-
-                if self.proximal_mode == 'ReweightedL1':
-                    K = S + H / (- O_hat.T @ LKron(w, self.V, self.d) @ O_hat + self.eps)
-                else:
-                    K = S
 
                 # Routine of scheduling for beta
                 if not self.fix_beta:
 
-                    n_zero_eigenvalues = np.sum(np.isclose(np.abs(np.linalg.eigvalsh(LKron(w_hat, self.V, self.d))), 0, atol = 1e-9))
+                    n_zero_eigenvalues = np.sum(np.isclose(np.abs(eigenvalues_hat), 0, atol=1e-9))
                     if self.k * self.d < n_zero_eigenvalues:
                         if self.verbose:
                             print('Increasing beta...', self.beta)
@@ -502,8 +489,7 @@ class SCGL:
             )
 
         w_init, U_init, X_init, Z_init, O_init, lambda_init = self.SCGL_initialization(X)
-        
-        O, w, Z, _, _, loss_log = self.SCGL_main_loop(
+        O, w, Z, U, lambda_, loss_log = self.SCGL_main_loop(
             w = w_init,
             U = U_init,
             X = X_init,
@@ -511,7 +497,7 @@ class SCGL:
             O = O_init,
             lambda_ = lambda_init
         )
-        
+
         if self.WANDB_monitor:
             wandb.finish()
 
@@ -525,6 +511,8 @@ class SCGL:
                 "w": w,
                 "O": O,
                 "Z": Z,
+                "U": U,
+                "lambda": lambda_,
             },
             "Loss-log": loss_log
         }

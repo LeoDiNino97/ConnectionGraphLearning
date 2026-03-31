@@ -32,6 +32,7 @@ def main(cfg: DictConfig):
     train_seed : float = cfg.signals.train_seed
     test_seed : float = cfg.signals.test_seed
     laplacian_operator : str = cfg.signals.laplacian_operator
+    len_scale : float = cfg.signals.len_scale
 
     # Loading folder
     RESULTS_PATH: Path = Path('.') / 'data/interim/spheres/' 
@@ -40,21 +41,21 @@ def main(cfg: DictConfig):
     # Data generation
     graph_ = FibonacciSphereGraph(V = V, k_neighbors= 4)
     
-    L_hat_KRON = np.load(RESULTS_PATH / 'KRON.npy')
-    L_hat_SCGL = np.load(RESULTS_PATH / 'SCGL.npy')
-    L_hat_SCOP = np.load(RESULTS_PATH / 'SCOP.npy')
-    L_hat_SLGP = np.load(RESULTS_PATH / 'SLGP.npy')
-    L_hat_SPD = np.load(RESULTS_PATH / 'SPD.npy')
+    L_hat_KRON = np.load(RESULTS_PATH / f'KRON_len_scale{len_scale}.npy')
+    L_hat_SCGL = np.load(RESULTS_PATH / f'SCGL_len_scale{len_scale}.npy')
+    L_hat_SCOP = np.load(RESULTS_PATH / f'SCOP_len_scale{len_scale}.npy')
+    L_hat_SLGP = np.load(RESULTS_PATH / f'SLGP_len_scale{len_scale}.npy')
+    L_hat_SDP = np.load(RESULTS_PATH / f'SDP_len_scale{len_scale}.npy')
 
     # # Compression experiment 
-    X_test = graph_.random_tangent_bundle_signals(M = 1000, seed=test_seed)
+    X_test = graph_.random_tangent_bundle_signals(M = 1000, len_scale=len_scale, seed=test_seed)
 
     _, U0 = np.linalg.eigh(graph_.laplacians[laplacian_operator])
     _, U1 = np.linalg.eigh(L_hat_KRON)
     _, U2 = np.linalg.eigh(L_hat_SCGL)
     _, U3 = np.linalg.eigh(L_hat_SCOP)
     _, U4 = np.linalg.eigh(L_hat_SLGP)
-    _, U5 = np.linalg.eigh(L_hat_SPD)
+    _, U5 = np.linalg.eigh(L_hat_SDP)
 
     non_zero_coeffs = [10,20,30,40,50,60,]
 
@@ -100,7 +101,7 @@ def main(cfg: DictConfig):
         "SCOP": SCOP_,
         "KRON": KRON_,
         "SLGP": SLGP_,
-        "SPD": SDP_,
+        "SDP": SDP_,
         "SCGL": SCGL_,
     }
 
@@ -155,7 +156,7 @@ def main(cfg: DictConfig):
     )
 
     plt.tight_layout()
-    plt.savefig(FIG_SAVE_DIR / "spheres.pdf", dpi=300, bbox_inches='tight')
+    plt.savefig(FIG_SAVE_DIR / f"spheres_len_scale{len_scale}.pdf", dpi=300, bbox_inches='tight')
 
 if __name__ == '__main__':
     main()
